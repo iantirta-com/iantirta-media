@@ -364,7 +364,7 @@ def test_iter_title_queries_empty():
 
 
 def test_get_lyrics_direct(monkeypatch):
-    from iantirta.karaoke.media import lyrics
+    from iantirta.media import lyrics
 
     def fake_request(session, endpoint, params):
         assert endpoint == "get"
@@ -403,7 +403,7 @@ def test_get_lyrics_direct(monkeypatch):
 
 
 def test_get_lyrics_search_fallback(monkeypatch):
-    from iantirta.karaoke.media import lyrics
+    from iantirta.media import lyrics
 
     def fake_direct(session, title, artist, duration):
         return None
@@ -446,7 +446,7 @@ def test_get_lyrics_search_fallback(monkeypatch):
 
 
 def test_get_lyrics_relaxed_title_search(monkeypatch):
-    from iantirta.karaoke.media import lyrics
+    from iantirta.media import lyrics
 
     queries: list[str] = []
 
@@ -522,7 +522,7 @@ def test_get_lyrics_relaxed_title_search(monkeypatch):
 
 
 def test_get_lyrics_relaxed_query_is_used_for_scoring(monkeypatch):
-    from iantirta.karaoke.media import lyrics
+    from iantirta.media import lyrics
 
     def fake_direct(session, title, artist, duration):
         return None
@@ -567,7 +567,7 @@ def test_get_lyrics_relaxed_query_is_used_for_scoring(monkeypatch):
 
 
 def test_get_lyrics_returns_none_when_no_candidates(monkeypatch):
-    from iantirta.karaoke.media import lyrics
+    from iantirta.media import lyrics
 
     monkeypatch.setattr(
         lyrics,
@@ -591,21 +591,21 @@ def test_get_lyrics_returns_none_when_no_candidates(monkeypatch):
 
 
 def test_get_lyrics_requires_title():
-    from iantirta.karaoke.media import get_lyrics
+    from iantirta.media import get_lyrics
 
     with pytest.raises(ValueError):
         get_lyrics(title="")
 
 
 def test_get_lyrics_requires_non_whitespace_title():
-    from iantirta.karaoke.media import get_lyrics
+    from iantirta.media import get_lyrics
 
     with pytest.raises(ValueError):
         get_lyrics(title="   ")
 
 
 def test_get_lyrics_deduplicates_candidates(monkeypatch):
-    from iantirta.karaoke.media import lyrics
+    from iantirta.media import lyrics
 
     calls = 0
 
