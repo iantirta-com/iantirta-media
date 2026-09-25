@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "iantirta-media"
+version = "0.1.0a1"
+
+authors = [
+    { name = "Iantirta.com", email = "ian@iantirta.com" },
+]
+maintainers = [
+    { name = "Iantirta.com", email = "ian@iantirta.com" }
+]
+
+description = "Reusable media downloading and metadata utilities for Python"
+readme = "README.md"
+
+requires-python = ">=3.10"
+
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+
+keywords = [
+    "media",
+    "youtube",
+    "downloader",
+    "lyrics",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Utilities",
+]
+
+dependencies = []
+
+
+[project.optional-dependencies]
+youtube = ["yt-dlp",]
+lyrics = ["requests", "iantirta-text"]
+audio = ["iantirta-audio"]
+
+all = ["iantirta-media[youtube, lyrics, audio]",]
+
+docs = ["mkdocs-material"]
+test = ["pytest"]
+dev = ["iantirta-media[test, all]"]
+
+
+[project.urls]
+Homepage = "https://iantirta.com"
+Documentation = "https://readthedocs.org"
+Repository = "https://github.com/iantirta-com/iantirta-media.git"
+"Bug Tracker" = "https://github.com/iantirta-com/iantirta-media/spam/issues"
+Changelog = "https://github.com/iantirta-com/iantirta-media/spam/blob/master/CHANGELOG.md"
+
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-ra"]
