@@ -76,3 +76,6 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["-ra"]
+markers = [
+    "manual: tests requiring external services or real media downloads",
+]

@@ -5,6 +5,8 @@ import argparse
 import logging
 from pathlib import Path
 
+import pytest
+
 from iantirta.media import (
     DownloadOptions,
     download_media,
@@ -16,6 +18,7 @@ URL = "https://www.youtube.com/watch?v=WOal7KSVbTI"
 OUTPUT = Path("test-output")
 
 
+@pytest.mark.manual
 def test_extract_info():
     print("\n=== EXTRACT INFO ===")
 
@@ -31,6 +34,7 @@ def test_extract_info():
     assert info.duration >= 0
 
 
+@pytest.mark.manual
 def test_get_lyrics_real():
     print("\n=== GET LYRICS ===")
 
@@ -56,6 +60,7 @@ def test_get_lyrics_real():
     assert lyrics.text
 
 
+@pytest.mark.manual
 def test_download_media():
     print("\n=== DOWNLOAD MEDIA ===")
 
