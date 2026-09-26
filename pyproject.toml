@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "iantirta-media"
-version = "0.1.0a1"
+version = "0.1.0"
 
 authors = [
     { name = "Iantirta.com", email = "ian@iantirta.com" },
@@ -50,11 +50,11 @@ dependencies = []
 
 
 [project.optional-dependencies]
-youtube = ["yt-dlp",]
+youtube = ["yt-dlp"]
 lyrics = ["requests", "iantirta-text"]
 audio = ["iantirta-audio"]
 
-all = ["iantirta-media[youtube, lyrics, audio]",]
+all = ["iantirta-media[youtube, lyrics, audio]"]
 
 docs = ["mkdocs-material"]
 test = ["pytest"]
@@ -64,9 +64,9 @@ dev = ["iantirta-media[test, all]"]
 [project.urls]
 Homepage = "https://iantirta.com"
 Documentation = "https://readthedocs.org"
-Repository = "https://github.com/iantirta-com/iantirta-media.git"
+Repository = "https://github.com/iantirta-com/iantirta-media"
 "Bug Tracker" = "https://github.com/iantirta-com/iantirta-media/spam/issues"
-Changelog = "https://github.com/iantirta-com/iantirta-media/spam/blob/master/CHANGELOG.md"
+Changelog = "https://github.com/iantirta-com/iantirta-media/blob/master/CHANGELOG.md"
 
 
 [tool.setuptools.packages.find]

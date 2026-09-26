@@ -1,6 +1,8 @@
 # Part of Iantirta.com
 # See LICENSE file for full copyright and licensing details.
 
+from importlib.metadata import version
+
 from .files import MediaFile
 from .lyrics import Lyrics, get_lyrics
 from .youtube import (
@@ -19,3 +21,5 @@ __all__ = [
     "extract_info",
     "get_lyrics",
 ]
+
+__version__ = version("iantirta-media")
