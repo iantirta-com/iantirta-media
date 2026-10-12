@@ -11,6 +11,7 @@ from .youtube import (
     download_media,
     extract_info,
 )
+from .video import VideoDownloader, VideoMetadata
 
 __all__ = [
     "DownloadOptions",
