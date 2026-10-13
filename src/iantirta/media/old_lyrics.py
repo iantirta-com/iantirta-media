@@ -14,7 +14,7 @@ from iantirta.text import filter_text, normalize
 if t.TYPE_CHECKING:
     from iantirta.media.youtube import VideoInfo
 
-__all__ = ["Lyrics", "get_lyrics"]
+# __all__ = ["Lyrics", "get_lyrics"]
 
 logger = logging.getLogger(__name__)
 

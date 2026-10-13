@@ -1,10 +1,22 @@
+# Part of Iantirta.com
+# See LICENSE file for full copyright and licensing details.
 
-from dataclasses import dataclass, fields
-from typing import Literal
-from pathlib import Path
 import logging
+import time
+from dataclasses import dataclass, fields
+from pathlib import Path
+from typing import Literal
 
-logger = logging.getLogger(__name__)
+from iantirta.media.video import ErrorType
+
+__all__ = [
+    "VideoDownloader",
+    "VideoMetadata",
+    "download_one_video",
+    "extract_video_info",
+]
+
+_logger = logging.getLogger(__name__)
 
 
 DEFAULT_CACHE_DIR = Path("~/.cache/iantirta/downloaded_video").expanduser().resolve()
@@ -37,7 +49,7 @@ class VideoMetadata:
 
     @classmethod
     def from_dict(cls, **datas) -> "VideoMetadata":
-        valid_keys = [f.name for f in fields(cls)]
+        valid_keys = {f.name for f in fields(cls)}
         valid_datas = {k: v for k, v in datas.items() if k in valid_keys}
         
         return cls(**valid_datas)
@@ -52,7 +64,7 @@ class VideoMetadata:
                 if len(self.artists) == 1:
                     self._resolved_artist = self.artists[0]
                 elif len(self.artists) > 1:
-                    logger.warning(f"Artists is multiple but still not implemented for it: {self.artists}")
+                    _logger.warning(f"Artists is multiple but still not implemented for it: {self.artists}")
 
             if self._resolved_artist is None:
                 candidate_keys = ["creators", "channel"]
@@ -63,9 +75,9 @@ class VideoMetadata:
 
                 if candidates:
                     if len(candidates) > 1:
-                        logger.warning(f"Artists candidates is multiple but still not implemented for it: {candidates}")
+                        _logger.warning(f"Artists candidates is multiple but still not implemented for it: {candidates}")
                     
-                    self._resolved_artist = list(candidates)[0].title()
+                    self._resolved_artist = next(iter(candidates)).title()
 
             if self._resolved_artist is None:
                 raise ValueError("Could not resolve artist")
@@ -81,6 +93,11 @@ class VideoDownloader:
     output_dir: str | Path = DEFAULT_CACHE_DIR
     retries: int = 3
     socket_timeout: int = 30
+    logger: logging.Logger | None = None
+
+    def __post_init__(self):
+        if not self.logger:
+            self.logger = _logger
 
     @property
     def yt_options(self) -> dict[str, str]:
@@ -96,53 +113,75 @@ class VideoDownloader:
             "noprogress": True,
             "continuedl": True,
 
-            "remote_components": ["ejs:github"],
+            "remote_components": ["ejs:npm"],
             "retries": self.retries,
             "fragment_retries": self.retries,
             "socket_timeout": self.socket_timeout,
             "cachedir": str(DEFAULT_CACHE_DIR / "yt-dlp-cache"),
         }
 
-    def download(self, url: str, *, output_dir: str | Path | None = None) -> VideoMetadata:
+    def download(
+        self,
+        url: str,
+        *,
+        output_dir: str | Path | None = None,
+        max_attempts: int = 5,
+        logger=None
+    ) -> VideoMetadata:
+        import yt_dlp.networking.exceptions
         from yt_dlp import YoutubeDL
 
         if output_dir is not None:
             self.output_dir = Path(output_dir).expanduser().resolve()
-        
-        with YoutubeDL(self.yt_options) as ydl:
-            info = ydl.extract_info(url, download=True)
-            video_path = Path(ydl.prepare_filename(info))
-            return VideoMetadata.from_dict(**info, video_path=video_path)
 
-    def extract_info(self, url: str) -> VideoMetadata:
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                (logger or self.logger).debug(f'downloading video ({attempt}/{max_attempts}): url="{url}", output="{self.output_dir!s}"')
+                with YoutubeDL(self.yt_options) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                    video_path = Path(ydl.prepare_filename(info))
+                    return VideoMetadata.from_dict(**info, video_path=video_path)
+            except Exception as e:
+                if attempt >= max_attempts:
+                    (logger or self.logger).warning(f"Download error: {e}")
+                    raise
+                if (
+                    isinstance(e, yt_dlp.networking.exceptions.HTTPError)
+                    or ErrorType(e) in (ErrorType.RATE_LIMIT,)
+                ):
+                    time.sleep(1)
+                else:
+                    (logger or self.logger).warning(f"Download error: {e}")
+                    raise
+
+    def extract_info(self, url: str, *, logger=None) -> VideoMetadata:
         from yt_dlp import YoutubeDL
 
         with YoutubeDL(self.yt_options) as ydl:
-            return VideoMetadata(**ydl.extract_info(url, download=False))
+            return VideoMetadata.from_dict(**ydl.extract_info(url, download=False))
 
     def batch_download(self, urls: list[str]) -> list[VideoMetadata]:
         from yt_dlp import YoutubeDL
 
         with YoutubeDL(self.yt_options) as ydl:
             ydl.download(urls)
-        
+
+
+def download_one_video(url, *, logger=None):
+    return VideoDownloader().download(url)
+
+def extract_video_info(url, *, logger=None):
+    return VideoDownloader().extract_info(url)
+
 
 if __name__ == "__main__":
-    from rich import inspect
-    from pprint import pprint
-    from yt_dlp import YoutubeDL
-    from urllib.parse import urlparse
-    #inspect(dataclass)
-    url = "https://youtube.com/watch?v=sdnDInjdWjw&list=RDsdnDInjdWjw&start_radio=1&pp=ygUIQmVybmFkeWGgBwE%3D"
-    d = VideoDownloader()
-    # buffer = BytesIO()
-    # with redirect_stdout(buffer):
-    #     d.download(url)
-    # bytes_obj = buffer.getvalue()
-    # file_obj = BytesIO(bytes_obj)
-    res = d.download(url)
-    inspect(res.resolved_artist)
-    inspect(res)
-    from dataclasses import asdict
-    pprint(asdict(res))
-    #inspect(YoutubeDL)
+    from iantirta.telemetry.netsvc import setup_logger
+    setup_logger("iantirta")
+    _logger.setLevel(logging.DEBUG)
+    test_urls = ['https://youtu.be/sdnDInjdWjw?si=nrmmWdCD3b15jWcF', 'https://www.youtube.com/watch?v=YCl1EPHkXTQ', 'https://www.youtube.com/watch?v=WOal7KSVbTI', 'https://www.youtube.com/watch?v=DnysMuKv-Fw', 'https://www.youtube.com/watch?v=sz5cibo858o', 'https://www.youtube.com/watch?v=JIRASzjBDio', 'https://www.youtube.com/watch?v=EFzQqsq1YV8', 'https://www.youtube.com/watch?v=ddobOZKONcE', 'https://www.youtube.com/watch?v=j4AEL7OYDuU', 'https://www.youtube.com/watch?v=9oDpgfIaN1g', 'https://www.youtube.com/watch?v=y2R6JNfXC-I', 'https://www.youtube.com/watch?v=hixslYfr4OQ', 'https://www.youtube.com/watch?v=ow4mav4Nn3g', 'https://www.youtube.com/watch?v=6xp_-nl9yLA', 'https://www.youtube.com/watch?v=vK08qJTY-BU', 'https://www.youtube.com/watch?v=GvjZAYU73JM&pp=0gcJCSsMAYcqIYzv', 'https://www.youtube.com/watch?v=uFJAztypzNA', 'https://www.youtube.com/watch?v=KWBuTiUqq5M&pp=0gcJCSsMAYcqIYzv', 'https://www.youtube.com/watch?v=snzc7k2_YBQ', 'https://www.youtube.com/watch?v=eUTtApxKSqA&pp=0gcJCSsMAYcqIYzv', 'https://www.youtube.com/watch?v=StBn41heB3M', 'https://www.youtube.com/watch?v=gwQy3jVs_F8', 'https://www.youtube.com/watch?v=-mwJiuPKFYQ&pp=0gcJCSsMAYcqIYzv', 'https://www.youtube.com/watch?v=hgWUqoYMBH0', 'https://www.youtube.com/watch?v=oG644Qj0k18', 'https://www.youtube.com/watch?v=wqq3ygLuVpI', 'https://www.youtube.com/watch?v=VdIQpWy60nQ', 'https://www.youtube.com/watch?v=MZ8CJf1rcUg', 'https://www.youtube.com/watch?v=7rfkey4vTpg', 'https://www.youtube.com/watch?v=bNWZ-W3BYKs', 'https://www.youtube.com/watch?v=V-6SFU12z3o', 'https://www.youtube.com/watch?v=2Y_GKeyvwMI', 'https://www.youtube.com/watch?v=k1trWu48lfU&pp=0gcJCSsMAYcqIYzv', 'https://www.youtube.com/watch?v=6ptKEm7AoKw', 'https://www.youtube.com/watch?v=odQydKJKHkY', 'https://www.youtube.com/watch?v=XuL1t8XySiw', 'https://www.youtube.com/watch?v=2QpI7NR9Pnw', 'https://www.youtube.com/watch?v=bH40Yol9dsY', 'https://www.youtube.com/watch?v=2RV_lC2i6bo&pp=0gcJCSsMAYcqIYzv', 'https://www.youtube.com/watch?v=w-SQOwVXY-w&pp=0gcJCSsMAYcqIYzv', 'https://www.youtube.com/watch?v=6wk_5IKmInA', 'https://www.youtube.com/watch?v=p3djRuyixCU', 'https://www.youtube.com/watch?v=LuM6nMIzm7U', 'https://www.youtube.com/watch?v=m-hphbsSGkI', 'https://www.youtube.com/watch?v=8wVVbx52WP8', 'https://www.youtube.com/watch?v=UMYa8ZWbjRA', 'https://www.youtube.com/watch?v=tICz6P41TFU&pp=0gcJCSsMAYcqIYzv', 'https://www.youtube.com/watch?v=NL6v74DD_5k', 'https://www.youtube.com/watch?v=U7zX9S4IUog', 'https://www.youtube.com/watch?v=9zCzVInO9vw&pp=0gcJCSsMAYcqIYzv']
+    # for url in test_urls:
+    #     download_one_video(url)
+    print(extract_video_info("https://www.youtube.com/watch?v=WOal7KSVbTI"))
+    
