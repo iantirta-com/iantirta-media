@@ -325,7 +325,7 @@ class LyricsSolver:
 
 
 def get_lyric(title: str, artist: str, duration: float, *, logger=None) -> LyricMetadata:
-    return LyricsSolver(logger=logger).resolved
+    return LyricsSolver(title=title, artist=artist, duration=duration, logger=logger).resolved
 
 
 if __name__ == "__main__":
