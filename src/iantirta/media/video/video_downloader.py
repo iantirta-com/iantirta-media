@@ -2,6 +2,8 @@
 # See LICENSE file for full copyright and licensing details.
 
 import logging
+import os
+import subprocess
 import time
 from dataclasses import dataclass, fields
 from pathlib import Path
@@ -99,6 +101,8 @@ class VideoDownloader:
         if not self.logger:
             self.logger = _logger
 
+        install_deno()
+
     @property
     def yt_options(self) -> dict[str, str]:
         return {
@@ -172,8 +176,38 @@ class VideoDownloader:
 def download_one_video(url, *, logger=None):
     return VideoDownloader().download(url)
 
+
 def extract_video_info(url, *, logger=None):
     return VideoDownloader().extract_info(url)
+
+
+def install_deno():
+    deno_home = Path.home() / ".denu" / "bin"
+    deno_bin = deno_home / ("deno.exe" if os.name == "nt" else "deno")
+    
+    if deno_bin.exists():
+        return
+    
+    if os.name == "nt":
+        cmd = ["powershell", "-NoProfile", "-Command", "irm https://deno.land/install.ps1 | iex"]
+        is_shell = False
+    else:
+        cmd = "curl -fsSL https://deno.land/install.sh | sh"
+        is_shell = True
+    
+    try:
+        subprocess.run(
+            cmd, 
+            shell=is_shell, 
+            check=True, 
+            capture_output=True, 
+            text=True
+        )
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Deno installation failed!\nSTDOUT: {e.stdout}\nSTDERR: {e.stderr}") from e
+
+    if str(deno_home) not in os.environ.get("PATH", ""):
+        os.environ["PATH"] = f"{deno_home}{os.pathsep}{os.environ['PATH']}"
 
 
 if __name__ == "__main__":
@@ -184,4 +218,4 @@ if __name__ == "__main__":
     # for url in test_urls:
     #     download_one_video(url)
     print(extract_video_info("https://www.youtube.com/watch?v=WOal7KSVbTI"))
-    
+    install_deno()
