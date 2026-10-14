@@ -14,6 +14,8 @@ from urllib.parse import urljoin, urlparse
 import requests
 from requests.exceptions import ConnectionError, HTTPError, Timeout
 
+from .. import progress_bar
+
 __all__ = [
     "BaseHTTP",
     "get_http_session",
@@ -394,7 +396,7 @@ class BaseHTTP:
                     " Please retry with `force_download=True`."
                 )
 
-                progress_cm = _progress.get_context_progressbar(
+                progress_cm = progress_bar.get_context_progressbar(
                     desc=displayed_filename,
                     log_level=self.logger.getEffectiveLevel(),
                     total=total,
