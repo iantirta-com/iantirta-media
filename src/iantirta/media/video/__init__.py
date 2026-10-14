@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from iantirta.lazy_import import LazyModule, define_import_structure
 
 if TYPE_CHECKING:
+    from .error_type import *
     from .video_downloader import *
 else:
     import sys
