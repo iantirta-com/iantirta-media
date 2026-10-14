@@ -1,3 +1,6 @@
+# Part of Iantirta.com
+# See LICENSE file for full copyright and licensing details.
+
 from contextlib import AbstractContextManager, nullcontext
 
 from ._tqdm import tqdm

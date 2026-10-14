@@ -123,6 +123,8 @@ def setup_logger(
     logging.captureWarnings(True)
     # enable deprecation warnings (disabled by default)
     warnings.simplefilter('default', category=DeprecationWarning)
+    # need to be adapted later but too muchwork for this pr.
+    warnings.filterwarnings('ignore', r'^datetime.datetime.utcnow\(\) is deprecated and scheduled for removal in a future version.*', category=DeprecationWarning)
 
     resetlocale()
 

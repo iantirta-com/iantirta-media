@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "iantirta-media"
-version = "0.1.1a2"
+version = "0.1.1a3"
 
 authors = [
     { name = "Iantirta.com", email = "ian@iantirta.com" },
@@ -47,15 +47,15 @@ classifiers = [
 ]
 
 dependencies = [
-    "iantirta-lazy_import"
+    "iantirta-lazy_import",
 ]
 
 
 [project.optional-dependencies]
-youtube = ["yt-dlp"]
+video = ["yt-dlp"]
 lyrics = ["requests", "iantirta-text"]
 
-all = ["iantirta-media[youtube, lyrics]"]
+all = ["iantirta-media[video, lyrics]"]
 
 docs = ["mkdocs-material"]
 test = ["pytest"]
