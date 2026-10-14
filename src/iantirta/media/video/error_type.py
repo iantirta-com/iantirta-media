@@ -3,6 +3,10 @@
 
 from enum import Enum
 
+__all__ = [
+    "ErrorType"
+]
+
 
 class ErrorType(Enum):
     """YT DLP Error wrapper"""
