@@ -181,29 +181,27 @@ def extract_video_info(url, *, logger=None):
 
 
 def install_deno():
-    deno_home = Path.home() / ".denu" / "bin"
+    deno_home = Path.home() / ".deno" / "bin"
     deno_bin = deno_home / ("deno.exe" if os.name == "nt" else "deno")
     
-    if deno_bin.exists():
-        return
-    
-    if os.name == "nt":
-        cmd = ["powershell", "-NoProfile", "-Command", "irm https://deno.land/install.ps1 | iex"]
-        is_shell = False
-    else:
-        cmd = "curl -fsSL https://deno.land/install.sh | sh"
-        is_shell = True
-    
-    try:
-        subprocess.run(
-            cmd, 
-            shell=is_shell, 
-            check=True, 
-            capture_output=True, 
-            text=True
-        )
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Deno installation failed!\nSTDOUT: {e.stdout}\nSTDERR: {e.stderr}") from e
+    if not deno_bin.exists():
+        if os.name == "nt":
+            cmd = ["powershell", "-NoProfile", "-Command", "irm https://deno.land/install.ps1 | iex"]
+            is_shell = False
+        else:
+            cmd = "curl -fsSL https://deno.land/install.sh | sh"
+            is_shell = True
+        
+        try:
+            subprocess.run(
+                cmd, 
+                shell=is_shell, 
+                check=True, 
+                capture_output=True, 
+                text=True
+            )
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"Deno installation failed!\nSTDOUT: {e.stdout}\nSTDERR: {e.stderr}") from e
 
     if str(deno_home) not in os.environ.get("PATH", ""):
         os.environ["PATH"] = f"{deno_home}{os.pathsep}{os.environ['PATH']}"
