@@ -16,6 +16,7 @@ __all__ = [
     "VideoMetadata",
     "download_one_video",
     "extract_video_info",
+    "install_deno",
 ]
 
 _logger = logging.getLogger(__name__)
@@ -100,8 +101,6 @@ class VideoDownloader:
     def __post_init__(self):
         if not self.logger:
             self.logger = _logger
-
-        install_deno()
 
     @property
     def yt_options(self) -> dict[str, str]:
