@@ -54,8 +54,9 @@ dependencies = [
 [project.optional-dependencies]
 video = ["yt-dlp"]
 lyrics = ["requests", "iantirta-text"]
+drive = ['google-auth', 'google-api-python-client']
 
-all = ["iantirta-media[video, lyrics]"]
+all = ["iantirta-media[video, lyrics, drive]"]
 
 docs = ["mkdocs-material"]
 test = ["pytest"]

@@ -5,6 +5,7 @@ import logging
 import os
 import subprocess
 import time
+import platform
 from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Literal
@@ -114,7 +115,7 @@ class VideoDownloader:
             "quiet": True,
             "no_warnings": True,
             "noprogress": True,
-            "continuedl": True,
+            "continuedl": False,
 
             "remote_components": ["ejs:npm"],
             "retries": self.retries,
@@ -156,6 +157,12 @@ class VideoDownloader:
                 ):
                     time.sleep(1)
                 else:
+                    from rich import inspect
+                    for exc in e.exc_info:
+                        if isinstance(exc, yt_dlp.networking.exceptions.HTTPError):
+                            inspect(exc.response)
+                            inspect(exc.response.headers)
+                            inspect(exc.response.fp)
                     (logger or self.logger).warning(f"Download error: {e}")
                     raise
 
@@ -172,22 +179,30 @@ class VideoDownloader:
             ydl.download(urls)
 
 
-def download_one_video(url, *, logger=None):
+def download_one_video(url, *, logger=None) -> VideoMetadata:
     return VideoDownloader().download(url)
 
 
-def extract_video_info(url, *, logger=None):
+def extract_video_info(url, *, logger=None) -> VideoMetadata:
     return VideoDownloader().extract_info(url)
 
 
 def install_deno():
-    deno_home = Path.home() / ".deno" / "bin"
+    is_termux = platform.system().lower() == 'android' and Path('/data/data/com.termux').exists()
+    if is_termux:
+        deno_home = Path('/data/data/com.termux/files/usr/bin/')
+    else:
+        deno_home = Path.home() / ".deno" / "bin"
     deno_bin = deno_home / ("deno.exe" if os.name == "nt" else "deno")
     
     if not deno_bin.exists():
+        _logger.debug('Downloading deno...')
         if os.name == "nt":
             cmd = ["powershell", "-NoProfile", "-Command", "irm https://deno.land/install.ps1 | iex"]
             is_shell = False
+        elif is_termux:
+            cmd = 'pkg install deno -y'
+            is_shell = True
         else:
             cmd = "curl -fsSL https://deno.land/install.sh | sh"
             is_shell = True
@@ -204,6 +219,7 @@ def install_deno():
             raise RuntimeError(f"Deno installation failed!\nSTDOUT: {e.stdout}\nSTDERR: {e.stderr}") from e
 
     if str(deno_home) not in os.environ.get("PATH", ""):
+        _logger.debug('adding deno to environment path...')
         os.environ["PATH"] = f"{deno_home}{os.pathsep}{os.environ['PATH']}"
 
 
@@ -211,8 +227,9 @@ if __name__ == "__main__":
     from iantirta.telemetry.netsvc import setup_logger
     setup_logger("iantirta")
     _logger.setLevel(logging.DEBUG)
-    test_urls = ['https://youtu.be/sdnDInjdWjw?si=nrmmWdCD3b15jWcF', 'https://www.youtube.com/watch?v=YCl1EPHkXTQ', 'https://www.youtube.com/watch?v=WOal7KSVbTI', 'https://www.youtube.com/watch?v=DnysMuKv-Fw', 'https://www.youtube.com/watch?v=sz5cibo858o', 'https://www.youtube.com/watch?v=JIRASzjBDio', 'https://www.youtube.com/watch?v=EFzQqsq1YV8', 'https://www.youtube.com/watch?v=ddobOZKONcE', 'https://www.youtube.com/watch?v=j4AEL7OYDuU', 'https://www.youtube.com/watch?v=9oDpgfIaN1g', 'https://www.youtube.com/watch?v=y2R6JNfXC-I', 'https://www.youtube.com/watch?v=hixslYfr4OQ', 'https://www.youtube.com/watch?v=ow4mav4Nn3g', 'https://www.youtube.com/watch?v=6xp_-nl9yLA', 'https://www.youtube.com/watch?v=vK08qJTY-BU', 'https://www.youtube.com/watch?v=GvjZAYU73JM&pp=0gcJCSsMAYcqIYzv', 'https://www.youtube.com/watch?v=uFJAztypzNA', 'https://www.youtube.com/watch?v=KWBuTiUqq5M&pp=0gcJCSsMAYcqIYzv', 'https://www.youtube.com/watch?v=snzc7k2_YBQ', 'https://www.youtube.com/watch?v=eUTtApxKSqA&pp=0gcJCSsMAYcqIYzv', 'https://www.youtube.com/watch?v=StBn41heB3M', 'https://www.youtube.com/watch?v=gwQy3jVs_F8', 'https://www.youtube.com/watch?v=-mwJiuPKFYQ&pp=0gcJCSsMAYcqIYzv', 'https://www.youtube.com/watch?v=hgWUqoYMBH0', 'https://www.youtube.com/watch?v=oG644Qj0k18', 'https://www.youtube.com/watch?v=wqq3ygLuVpI', 'https://www.youtube.com/watch?v=VdIQpWy60nQ', 'https://www.youtube.com/watch?v=MZ8CJf1rcUg', 'https://www.youtube.com/watch?v=7rfkey4vTpg', 'https://www.youtube.com/watch?v=bNWZ-W3BYKs', 'https://www.youtube.com/watch?v=V-6SFU12z3o', 'https://www.youtube.com/watch?v=2Y_GKeyvwMI', 'https://www.youtube.com/watch?v=k1trWu48lfU&pp=0gcJCSsMAYcqIYzv', 'https://www.youtube.com/watch?v=6ptKEm7AoKw', 'https://www.youtube.com/watch?v=odQydKJKHkY', 'https://www.youtube.com/watch?v=XuL1t8XySiw', 'https://www.youtube.com/watch?v=2QpI7NR9Pnw', 'https://www.youtube.com/watch?v=bH40Yol9dsY', 'https://www.youtube.com/watch?v=2RV_lC2i6bo&pp=0gcJCSsMAYcqIYzv', 'https://www.youtube.com/watch?v=w-SQOwVXY-w&pp=0gcJCSsMAYcqIYzv', 'https://www.youtube.com/watch?v=6wk_5IKmInA', 'https://www.youtube.com/watch?v=p3djRuyixCU', 'https://www.youtube.com/watch?v=LuM6nMIzm7U', 'https://www.youtube.com/watch?v=m-hphbsSGkI', 'https://www.youtube.com/watch?v=8wVVbx52WP8', 'https://www.youtube.com/watch?v=UMYa8ZWbjRA', 'https://www.youtube.com/watch?v=tICz6P41TFU&pp=0gcJCSsMAYcqIYzv', 'https://www.youtube.com/watch?v=NL6v74DD_5k', 'https://www.youtube.com/watch?v=U7zX9S4IUog', 'https://www.youtube.com/watch?v=9zCzVInO9vw&pp=0gcJCSsMAYcqIYzv']
-    # for url in test_urls:
-    #     download_one_video(url)
-    print(extract_video_info("https://www.youtube.com/watch?v=WOal7KSVbTI"))
     install_deno()
+    test_urls = ['https://youtu.be/sdnDInjdWjw?si=nrmmWdCD3b15jWcF', 'https://www.youtube.com/watch?v=YCl1EPHkXTQ', 'https://www.youtube.com/watch?v=WOal7KSVbTI', 'https://www.youtube.com/watch?v=DnysMuKv-Fw', 'https://www.youtube.com/watch?v=sz5cibo858o', 'https://www.youtube.com/watch?v=JIRASzjBDio', 'https://www.youtube.com/watch?v=EFzQqsq1YV8', 'https://www.youtube.com/watch?v=ddobOZKONcE', 'https://www.youtube.com/watch?v=j4AEL7OYDuU', 'https://www.youtube.com/watch?v=9oDpgfIaN1g', 'https://www.youtube.com/watch?v=y2R6JNfXC-I', 'https://www.youtube.com/watch?v=hixslYfr4OQ', 'https://www.youtube.com/watch?v=ow4mav4Nn3g', 'https://www.youtube.com/watch?v=6xp_-nl9yLA', 'https://www.youtube.com/watch?v=vK08qJTY-BU', 'https://www.youtube.com/watch?v=GvjZAYU73JM&pp=0gcJCSsMAYcqIYzv', 'https://www.youtube.com/watch?v=uFJAztypzNA', 'https://www.youtube.com/watch?v=KWBuTiUqq5M&pp=0gcJCSsMAYcqIYzv', 'https://www.youtube.com/watch?v=snzc7k2_YBQ', 'https://www.youtube.com/watch?v=eUTtApxKSqA&pp=0gcJCSsMAYcqIYzv', 'https://www.youtube.com/watch?v=StBn41heB3M', 'https://www.youtube.com/watch?v=gwQy3jVs_F8', 'https://www.youtube.com/watch?v=-mwJiuPKFYQ&pp=0gcJCSsMAYcqIYzv', 'https://www.youtube.com/watch?v=hgWUqoYMBH0', 'https://www.youtube.com/watch?v=oG644Qj0k18', 'https://www.youtube.com/watch?v=wqq3ygLuVpI', 'https://www.youtube.com/watch?v=VdIQpWy60nQ', 'https://www.youtube.com/watch?v=MZ8CJf1rcUg', 'https://www.youtube.com/watch?v=7rfkey4vTpg', 'https://www.youtube.com/watch?v=bNWZ-W3BYKs', 'https://www.youtube.com/watch?v=V-6SFU12z3o', 'https://www.youtube.com/watch?v=2Y_GKeyvwMI', 'https://www.youtube.com/watch?v=k1trWu48lfU&pp=0gcJCSsMAYcqIYzv', 'https://www.youtube.com/watch?v=6ptKEm7AoKw', 'https://www.youtube.com/watch?v=odQydKJKHkY', 'https://www.youtube.com/watch?v=XuL1t8XySiw', 'https://www.youtube.com/watch?v=2QpI7NR9Pnw', 'https://www.youtube.com/watch?v=bH40Yol9dsY', 'https://www.youtube.com/watch?v=2RV_lC2i6bo&pp=0gcJCSsMAYcqIYzv', 'https://www.youtube.com/watch?v=w-SQOwVXY-w&pp=0gcJCSsMAYcqIYzv', 'https://www.youtube.com/watch?v=6wk_5IKmInA', 'https://www.youtube.com/watch?v=p3djRuyixCU', 'https://www.youtube.com/watch?v=LuM6nMIzm7U', 'https://www.youtube.com/watch?v=m-hphbsSGkI', 'https://www.youtube.com/watch?v=8wVVbx52WP8', 'https://www.youtube.com/watch?v=UMYa8ZWbjRA', 'https://www.youtube.com/watch?v=tICz6P41TFU&pp=0gcJCSsMAYcqIYzv', 'https://www.youtube.com/watch?v=NL6v74DD_5k', 'https://www.youtube.com/watch?v=U7zX9S4IUog', 'https://www.youtube.com/watch?v=9zCzVInO9vw&pp=0gcJCSsMAYcqIYzv']
+    for url in test_urls[:2]:
+        download_one_video(url)
+    print(extract_video_info("https://www.youtube.com/watch?v=WOal7KSVbTI"))
+    

@@ -8,6 +8,7 @@ import sys
 import warnings
 from collections.abc import Callable
 from typing import Literal
+from functools import wraps
 
 DEFAULT_LOGGING_FORMAT = '[%(asctime)s] %(levelname)s %(name)s: %(message)s %(perf_info)s'
 
@@ -63,24 +64,6 @@ def resetlocale():
             return locale.setlocale(locale.LC_ALL, ln)
         except locale.Error:
             continue
-
-
-class LoggingHookManager:
-    _hooks: list[Callable] = []
-
-    @classmethod
-    def dispatch(cls, record):
-        if not cls._hooks:
-            return
-        try:
-            for hook in cls._hooks:
-                hook(record)
-        except:
-            pass
-
-
-def add_hook(hook: Callable):
-    LoggingHookManager._hooks.append(hook)
 
 
 class WatchedFileHandler(logging.handlers.WatchedFileHandler):
@@ -177,22 +160,37 @@ def setup_logger(
     logging.getLogger(__name__).debug('logger initialized with default: "%s"', default_level)
 
     if post_emit:
-        original_emit = handler.emit
+        def add_logger_hook(self, hook) -> None:
+            if not hasattr(logging.Logger, '_post_handle_hooks'):
+                self._post_handle_hooks = []
+    
+            self._post_handle_hooks.append(hook)
 
-        def new_emit(record):
-            try:
-                original_emit(record)
-            except:
-                raise
-            else:
-                LoggingHookManager.dispatch(record)
+        if not hasattr(logging.Logger, 'add_hook'):
+            logging.Logger.add_hook = add_logger_hook
 
-        handler.emit = new_emit
+        if not getattr(logging.Logger, '_is_patched', False):
+        
+            original_callHandlers = logging.Logger.callHandlers
+    
+            @wraps(original_callHandlers)
+            def new_callHandlers(self, record):
+                
+                result = original_callHandlers(self, record)
+                
+                for hook in getattr(self, '_post_handle_hooks', []):
+                    hook(record)
+    
+                return result
+    
+            setattr(logging.Logger, "callHandlers", new_callHandlers)
+            setattr(logging.Logger, "_is_patched", True)
 
 
 if __name__ == "__main__":
     setup_logger("iantirta", default_level=logging.DEBUG)
     logger = logging.getLogger(__name__)
+    logger2 = logging.getLogger("logger2")
     from rich import inspect as i
 
     i(logging.Handler.format)
@@ -206,10 +204,10 @@ if __name__ == "__main__":
         print("========================")
         
 
-    add_hook(custom_hook)
+    logger2.add_hook(custom_hook)
     logger.debug("debug")
     logger.info("info")
     logger.warning("warning")
     logger.critical("critical")
     logger.error("error")
-    logger.fatal("fatal")
+    logger2.fatal("fatal")
