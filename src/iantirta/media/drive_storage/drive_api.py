@@ -1,14 +1,15 @@
+import ast
 import json
-from pathlib import Path
-import os
 import logging
-from dataclasses import dataclass
-from rich import inspect as i
+import os
 from contextlib import ExitStack
+from dataclasses import asdict, dataclass
+from pathlib import Path
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+from rich import inspect as i
 
 from iantirta.media import get_context_progressbar
 
@@ -27,6 +28,8 @@ class DriveMetadata:
     drive_file_id: str
     drive_folder_id: str
 
+    def to_dict(self) -> dict:
+        return asdict(self)
 
 class DriveStorage:
     def __init__(
@@ -37,7 +40,12 @@ class DriveStorage:
         logger: logging.Logger | None = None
     ):
         if not user_token:
-            user_token = json.loads(os.environ['IANTIRTA_DRIVE_USER_TOKEN'])
+            try:
+                user_token = json.loads(os.environ['IANTIRTA_DRIVE_USER_TOKEN'])
+
+            except json.decoder.JSONDecodeError:
+                user_token = ast.literal_eval(os.environ['IANTIRTA_DRIVE_USER_TOKEN'])
+
         self.user_token = user_token
         
         if not root_folder_id:
