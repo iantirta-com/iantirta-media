@@ -66,6 +66,15 @@ def resetlocale():
             continue
 
 
+_default_logging_logRecordFactory = logging._logRecordFactory
+iantirta_log_formatter = None
+iantirta_log_handler = None
+
+
+def formatLogMessage(record):
+    return iantirta_log_formatter.format(record)
+
+
 class WatchedFileHandler(logging.handlers.WatchedFileHandler):
     def __init__(self, filename):
         self.errors = None  # py38
@@ -84,7 +93,7 @@ class ColoredFormatter(logging.Formatter):
         return super().format(record)
 
 
-class LogRecord(logging.LogRecord):
+class LogRecord(_default_logging_logRecordFactory):
     def __init__(self, name, level, pathname, lineno, msg, args, exc_info, func=None, sinfo=None, **kwargs):
         super().__init__(name, level, pathname, lineno, msg, args, exc_info, func=func, sinfo=sinfo, **kwargs)
         self.perf_info = ""
@@ -100,6 +109,8 @@ def setup_logger(
 ):
     if logging.getLogRecordFactory() is LogRecord:
         return
+    
+    global iantirta_log_formatter, iantirta_log_handler
 
     logging.setLogRecordFactory(LogRecord)
 
@@ -148,12 +159,13 @@ def setup_logger(
             sys.stderr.write("ERROR: couldn't create the logfile directory. Logging to the standard output.\n")
 
     if isinstance(handler, logging.StreamHandler):
-        formatter = ColoredFormatter(format, datefmt='(%z) %y/%m/%d %H:%M:%S')
+        iantirta_log_formatter = ColoredFormatter(format, datefmt='(%z) %y/%m/%d %H:%M:%S')
     else:
-        formatter = logging.Formatter(format)
+        iantirta_log_formatter = logging.Formatter(format)
 
-    handler.setFormatter(formatter)
+    handler.setFormatter(iantirta_log_formatter)
     logging.getLogger().addHandler(handler)
+    iantirta_log_handler = handler
 
     logging.getLogger(appname).setLevel(default_level)
 
@@ -183,9 +195,29 @@ def setup_logger(
     
                 return result
     
-            setattr(logging.Logger, "callHandlers", new_callHandlers)
-            setattr(logging.Logger, "_is_patched", True)
+            logging.Logger.callHandlers = new_callHandlers
+            logging.Logger._is_patched = True
 
+
+def reset_logger():
+    global iantirta_log_handler, iantirta_log_formatter
+    logging.getLogger().removeHandler(iantirta_log_handler)
+    if hasattr(logging.Logger, 'add_hook'):
+        try:
+            del logging.Logger.add_hook
+        except:
+            pass
+    
+    if hasattr(logging.Logger, '_is_patched'):
+        try:
+            del logging.Logger._is_patched
+        except:
+            pass
+
+    iantirta_log_handler = None
+    iantirta_log_formatter = None
+
+    logging.setLogRecordFactory(_default_logging_logRecordFactory)
 
 if __name__ == "__main__":
     setup_logger("iantirta", default_level=logging.DEBUG)

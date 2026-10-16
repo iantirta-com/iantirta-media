@@ -8,6 +8,8 @@ import requests.exceptions
 
 from iantirta.media._http._http import BaseHTTP
 
+from .errors import LyricNotFound
+
 __all__ = [
     "LyricMetadata",
     "LyricsSolver",
@@ -314,7 +316,7 @@ class LyricsSolver:
         #             # else:
         #             #     self.logger.warning(f"Dropping result as the artist name doesnt really match with ours, {r}")
 
-        raise RuntimeError()
+        raise LyricNotFound("No lyric have been found")
             
     @property
     def resolved(self) -> LyricMetadata:
