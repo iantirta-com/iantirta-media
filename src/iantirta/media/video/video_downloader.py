@@ -157,12 +157,6 @@ class VideoDownloader:
                 ):
                     time.sleep(1)
                 else:
-                    from rich import inspect
-                    for exc in e.exc_info:
-                        if isinstance(exc, yt_dlp.networking.exceptions.HTTPError):
-                            inspect(exc.response)
-                            inspect(exc.response.headers)
-                            inspect(exc.response.fp)
                     (logger or self.logger).warning(f"Download error: {e}")
                     raise
 
