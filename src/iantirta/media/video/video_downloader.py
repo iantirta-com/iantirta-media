@@ -109,6 +109,7 @@ class VideoDownloader:
             and constants.DEFAULT_NOROTATE_COOKIEPATH.is_file()
         ):
             self.cookiefile = constants.DEFAULT_NOROTATE_COOKIEPATH
+            install_deno()
 
         self.cookiefile = str(self.cookiefile)
 
