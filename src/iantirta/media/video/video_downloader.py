@@ -135,7 +135,7 @@ class VideoDownloader:
             "noprogress": True,
             "continuedl": False,
 
-            "remote_components": ["ejs:npm"],
+            "remote_components": ["ejs:github"],
             "retries": self.retries,
             "fragment_retries": self.retries,
             "socket_timeout": self.socket_timeout,
