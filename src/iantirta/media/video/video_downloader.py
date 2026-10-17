@@ -119,7 +119,7 @@ class VideoDownloader:
     @property
     def yt_options(self) -> dict[str, str]:
         return {
-            "cookiefile": self.cookiefle,
+            "cookiefile": self.cookiefile,
             "format": (
                 "bestvideo[height<=720][ext=mp4]+"
                 "bestaudio[ext=m4a]/best[ext=mp4]/best"
