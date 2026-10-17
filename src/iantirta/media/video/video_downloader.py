@@ -133,6 +133,11 @@ class VideoDownloader:
             #"no_warnings": not self.logger.getEffectiveLevel() == logging.DEBUG,
             'logger': self.logger,
             'verbose': True,
+            'js_runtimes': {
+                'deno': {},
+                'node': {},
+                'quickjs': {},
+            }
             "noprogress": True,
             "continuedl": False,
 
