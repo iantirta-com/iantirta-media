@@ -129,8 +129,8 @@ class VideoDownloader:
             "outtmpl": str(Path(self.output_dir) / "%(title)s.%(ext)s"),
             "noplaylist": True,
 
-            "quiet": not self.logger.getEffectiveLevel() == logging.DEBUG,
-            "no_warnings": not self.logger.getEffectiveLevel() == logging.DEBUG,
+            #"quiet": not self.logger.getEffectiveLevel() == logging.DEBUG,
+            #"no_warnings": not self.logger.getEffectiveLevel() == logging.DEBUG,
             "noprogress": True,
             "continuedl": False,
 

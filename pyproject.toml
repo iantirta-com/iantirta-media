@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "iantirta-media"
-version = "0.1.1a7"
+version = "0.1.1a9"
 
 authors = [
     { name = "Iantirta.com", email = "ian@iantirta.com" },
