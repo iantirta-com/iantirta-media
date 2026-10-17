@@ -134,10 +134,10 @@ class VideoDownloader:
             'logger': self.logger,
             'verbose': True,
             'js_runtimes': {
-                'deno': {},
-                'node': {},
                 'quickjs': {},
-            }
+                'node': {},
+                #'deno': {},
+            },
             "noprogress": True,
             "continuedl": False,
 
