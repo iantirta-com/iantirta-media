@@ -102,6 +102,7 @@ class VideoDownloader:
     def __post_init__(self):
         if not self.logger:
             self.logger = _logger
+            self.logger.setLevel(logging.DEBUG)
 
         if (
             self.cookiefile == constants.DEFAULT_COOKIEPATH
@@ -110,6 +111,10 @@ class VideoDownloader:
             self.cookiefile = constants.DEFAULT_NOROTATE_COOKIEPATH
 
         self.cookiefile = str(self.cookiefile)
+
+        self.logger.debug(
+            f"Using Cookie configuration file at: {self.cookiefile}"
+        )
 
     @property
     def yt_options(self) -> dict[str, str]:
