@@ -131,6 +131,8 @@ class VideoDownloader:
 
             #"quiet": not self.logger.getEffectiveLevel() == logging.DEBUG,
             #"no_warnings": not self.logger.getEffectiveLevel() == logging.DEBUG,
+            'logger': self.logger,
+            'verbose': True,
             "noprogress": True,
             "continuedl": False,
 
