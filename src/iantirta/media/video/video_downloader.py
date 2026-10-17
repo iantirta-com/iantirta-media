@@ -102,20 +102,14 @@ class VideoDownloader:
     def __post_init__(self):
         if not self.logger:
             self.logger = _logger
-            self.logger.setLevel(logging.DEBUG)
 
         if (
             self.cookiefile == constants.DEFAULT_COOKIEPATH
             and constants.DEFAULT_NOROTATE_COOKIEPATH.is_file()
         ):
             self.cookiefile = constants.DEFAULT_NOROTATE_COOKIEPATH
-            install_deno()
 
         self.cookiefile = str(self.cookiefile)
-
-        self.logger.debug(
-            f"Using Cookie configuration file at: {self.cookiefile}"
-        )
 
     @property
     def yt_options(self) -> dict[str, str]:
@@ -129,14 +123,14 @@ class VideoDownloader:
             "outtmpl": str(Path(self.output_dir) / "%(title)s.%(ext)s"),
             "noplaylist": True,
 
-            #"quiet": not self.logger.getEffectiveLevel() == logging.DEBUG,
-            #"no_warnings": not self.logger.getEffectiveLevel() == logging.DEBUG,
+            "quiet": not self.logger.getEffectiveLevel() == logging.DEBUG,
+            "no_warnings": not self.logger.getEffectiveLevel() == logging.DEBUG,
             'logger': self.logger,
-            'verbose': True,
+            # 'verbose': True,
             'js_runtimes': {
                 'quickjs': {},
                 'node': {},
-                #'deno': {},
+                'deno': {},
             },
             "noprogress": True,
             "continuedl": False,
