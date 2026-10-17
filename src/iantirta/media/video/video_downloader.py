@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Literal
 
 from iantirta.media.video import ErrorType
+from iantirta.media import constants
 
 __all__ = [
     "VideoDownloader",
@@ -21,9 +22,6 @@ __all__ = [
 ]
 
 _logger = logging.getLogger(__name__)
-
-
-DEFAULT_CACHE_DIR = Path("~/.cache/iantirta/downloaded_video").expanduser().resolve()
 
 
 @dataclass(slots=True)
@@ -55,7 +53,7 @@ class VideoMetadata:
     def from_dict(cls, **datas) -> "VideoMetadata":
         valid_keys = {f.name for f in fields(cls)}
         valid_datas = {k: v for k, v in datas.items() if k in valid_keys}
-        
+
         return cls(**valid_datas)
 
     @property
@@ -88,30 +86,43 @@ class VideoMetadata:
     
         return self._resolved_artist
 
-    
+
 @dataclass
 class VideoDownloader:
     """YTDLP Wrapper"""
-    
+
     format: Literal["best-audio"] = "best-audio"
-    output_dir: str | Path = DEFAULT_CACHE_DIR
+    output_dir: str | Path = constants.DEFAULT_VIDEO_DOWNLOAD_DIR
     retries: int = 3
     socket_timeout: int = 30
     logger: logging.Logger | None = None
+
+    cookiefile: str | Path = constants.DEFAULT_COOKIEPATH
 
     def __post_init__(self):
         if not self.logger:
             self.logger = _logger
 
+        if (
+            self.cookiefile == constants.DEFAULT_COOKIEPATH
+            and constants.DEFAULT_NOROTATE_COOKIEPATH.is_file()
+        ):
+            self.cookiefile = constants.DEFAULT_NOROTATE_COOKIEPATH
+
+        self.cookiefile = str(self.cookiefile)
+
     @property
     def yt_options(self) -> dict[str, str]:
         return {
-            "cookiefile": "cookies.txt",
-            "format": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            "cookiefile": self.cookiefle,
+            "format": (
+                "bestvideo[height<=720][ext=mp4]+"
+                "bestaudio[ext=m4a]/best[ext=mp4]/best"
+            ),
             "merge_output_format": "mp4",
             "outtmpl": str(Path(self.output_dir) / "%(title)s.%(ext)s"),
             "noplaylist": True,
-    
+
             "quiet": True,
             "no_warnings": True,
             "noprogress": True,
@@ -121,7 +132,10 @@ class VideoDownloader:
             "retries": self.retries,
             "fragment_retries": self.retries,
             "socket_timeout": self.socket_timeout,
-            "cachedir": str(DEFAULT_CACHE_DIR / "yt-dlp-cache"),
+            "cachedir": str(
+                constants.DEFAULT_VIDEO_DOWNLOAD_DIR /
+                "yt-dlp-cache"
+            ),
         }
 
     def download(
@@ -142,7 +156,9 @@ class VideoDownloader:
         while True:
             attempt += 1
             try:
-                (logger or self.logger).debug(f'downloading video ({attempt}/{max_attempts}): url="{url}", output="{self.output_dir!s}"')
+                (logger or self.logger).debug(
+                    f'downloading video ({attempt}/{max_attempts}): url="{url}", output="{self.output_dir!s}"'
+                )
                 with YoutubeDL(self.yt_options) as ydl:
                     info = ydl.extract_info(url, download=True)
                     video_path = Path(ydl.prepare_filename(info))
@@ -173,44 +189,56 @@ class VideoDownloader:
             ydl.download(urls)
 
 
-def download_one_video(url, *, logger=None) -> VideoMetadata:
+def download_one_video(url, *, logger=None, **kwargs) -> VideoMetadata:
     return VideoDownloader().download(url)
 
 
-def extract_video_info(url, *, logger=None) -> VideoMetadata:
+def extract_video_info(url, *, logger=None, **kwargs) -> VideoMetadata:
     return VideoDownloader().extract_info(url)
 
 
 def install_deno():
-    is_termux = platform.system().lower() == 'android' and Path('/data/data/com.termux').exists()
+    is_termux = (
+        platform.system().lower() == 'android'
+        and Path('/data/data/com.termux').exists()
+    )
     if is_termux:
         deno_home = Path('/data/data/com.termux/files/usr/bin/')
     else:
         deno_home = Path.home() / ".deno" / "bin"
     deno_bin = deno_home / ("deno.exe" if os.name == "nt" else "deno")
-    
+
     if not deno_bin.exists():
         _logger.debug('Downloading deno...')
+
         if os.name == "nt":
-            cmd = ["powershell", "-NoProfile", "-Command", "irm https://deno.land/install.ps1 | iex"]
+            cmd = [
+                "powershell", "-NoProfile",
+                "-Command", "irm https://deno.land/install.ps1 | iex"
+            ]
             is_shell = False
+
         elif is_termux:
             cmd = 'pkg install deno -y'
             is_shell = True
+
         else:
             cmd = "curl -fsSL https://deno.land/install.sh | sh"
             is_shell = True
-        
+
         try:
             subprocess.run(
-                cmd, 
-                shell=is_shell, 
-                check=True, 
-                capture_output=True, 
+                cmd,
+                shell=is_shell,
+                check=True,
+                capture_output=True,
                 text=True
             )
         except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Deno installation failed!\nSTDOUT: {e.stdout}\nSTDERR: {e.stderr}") from e
+            raise RuntimeError(
+                "Deno installation failed!\n"
+                f"STDOUT: {e.stdout}\nSTDERR: {e.stderr}"
+            ) from e
 
     if str(deno_home) not in os.environ.get("PATH", ""):
         _logger.debug('adding deno to environment path...')
