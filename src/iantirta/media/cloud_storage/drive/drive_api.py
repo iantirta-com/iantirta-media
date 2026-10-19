@@ -6,12 +6,11 @@ from contextlib import ExitStack
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
-from google.auth.transport.requests import Request
-from google_auth_oauthlib.flow import InstalledAppFlow
-
 from rich import inspect as i
 
 from iantirta.media import get_context_progressbar

@@ -8,6 +8,8 @@ from iantirta.lazy_import import LazyModule, define_import_structure
 if TYPE_CHECKING:
     from .drive import *
     from .hf_dataset import *
+    from .storage_gdrive import *
+    from .storage_hf_dataset import *
 else:
     import sys
     
