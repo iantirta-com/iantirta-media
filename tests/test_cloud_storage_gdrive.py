@@ -1,15 +1,12 @@
 import os
 from pathlib import Path
 
-import googleapiclient.errors
 import pytest
-from google.oauth2.credentials import Credentials
-from rich import inspect
+
+pytestmark = pytest.mark.manual
 
 from iantirta.media import DriveStorage
 from iantirta.media.cloud_storage.storage_gdrive import ENV_DRIVE_USER_TOKEN
-
-pytestmark = pytest.mark.manual
 
 
 @pytest.fixture
@@ -22,8 +19,10 @@ def test_api_drive_connection(drive_api: DriveStorage):
 
 
 def test_api_drive_connection_root_folder_not_exists(drive_api: DriveStorage):
-    drive_api.root_folder_id = '50'
+    import googleapiclient.errors
 
+    drive_api.root_folder_id = '50'
+    
     with pytest.raises(googleapiclient.errors.HttpError, match='File not found: 50.'):
         drive_api.test_connection()
 
@@ -63,6 +62,8 @@ def test_api_drive_upload_file_will_use_the_same_encode(drive_api: DriveStorage,
 
 
 def test_api_drive_get_credentials(drive_api: DriveStorage):
+    from google.oauth2.credentials import Credentials
+
     user_token = os.environ[ENV_DRIVE_USER_TOKEN]
     creds = drive_api.get_credentials(user_token=user_token)
     assert creds is not None

@@ -6,8 +6,6 @@ import pytest
 
 pytestmark = pytest.mark.manual
 
-import huggingface_hub.errors
-
 from iantirta.media import HFDatasetStorage
 
 
@@ -21,12 +19,14 @@ def test_api_hfdataset_connection(hf_api: HFDatasetStorage):
 
 
 def test_api_hfdataset_repo_not_exists(hf_api: HFDatasetStorage):
+    import huggingface_hub.errors
     with pytest.raises(huggingface_hub.errors.RepositoryNotFoundError):
         hf_api.repo_id = 'yancovenant/test-connection'
         hf_api.test_connection()
 
 
 def test_api_hfdataset_access_token_invalid(hf_api: HFDatasetStorage):
+    import huggingface_hub.errors
     with pytest.raises(huggingface_hub.errors.RepositoryNotFoundError):
         hf_api.access_token = '12345'
         hf_api.test_connection()
