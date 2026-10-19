@@ -54,7 +54,7 @@ dependencies = [
 [project.optional-dependencies]
 video = ["yt-dlp"]
 lyrics = ["requests", "iantirta-text"]
-drive = ['google-auth', 'google-api-python-client']
+drive = ['google-auth', 'google-api-python-client', 'google-auth-oauthlib']
 colab = ['google-colab-cli']
 kaggle = ['kaggle']
 
