@@ -27,15 +27,21 @@ SCOPES = ['https://www.googleapis.com/auth/drive']
 
 
 def _normalize_to_dict(variable: str | Path | dict) -> dict:
+    def _parse(var: str):
+        try:
+            return json.loads(var)
+        except json.decoder.JSONDecodeError:
+            return ast.literal_eval(var)
+    
     if isinstance(variable, (str, Path)):
         # Normalize first
-        if Path(variable).is_file():
-            variable = Path(variable).read_text('utf-8')
-
         try:
-            variable = json.loads(variable)
-        except json.decoder.JSONDecodeError:
-            variable = ast.literal_eval(variable)
+            if Path(variable).is_file():
+                variable = Path(variable).read_text('utf-8')
+        except Exception:
+            pass
+
+        variable = _parse(variable)
 
     return variable
 
