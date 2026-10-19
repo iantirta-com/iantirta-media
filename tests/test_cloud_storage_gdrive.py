@@ -70,6 +70,7 @@ def test_api_drive_get_credentials(drive_api: DriveStorage):
 
 
 def test_api_drive_setup_user_token(drive_api: DriveStorage):
+    # change this on different device.
     client_config = Path("~/.cache/iantirta/drive/creds.json").expanduser().resolve()
     assert client_config.is_file()
     auth_url, _ = drive_api.setup_user_token(client_config=client_config, key="test")
