@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from iantirta.lazy_import import LazyModule, define_import_structure
 
 if TYPE_CHECKING:
-    from .drive_api import *
+    from .worker_kaggle import *
 else:
     import sys
     

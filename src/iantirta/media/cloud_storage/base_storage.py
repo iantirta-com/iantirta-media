@@ -1,8 +1,9 @@
 
+import hashlib
+import hmac
+import logging
 from abc import abstractmethod
 from pathlib import Path
-import logging
-
 
 _logger = logging.getLogger(__name__)
 
@@ -32,3 +33,10 @@ class StorageMixin:
         logger: logging.Logger | None = None
     ) -> list[str]:
         raise NotImplementedError()
+
+    def _encode_name(self, name: str) -> str:
+        return hmac.new(
+            b'karaoke_file',
+            repr(name).encode(),
+            hashlib.sha256,
+        ).hexdigest()

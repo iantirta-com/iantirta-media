@@ -1,6 +1,7 @@
-import hmac, hashlib, os
-from pathlib import Path
+
 import logging
+import os
+from pathlib import Path
 
 from .base_storage import StorageMixin
 
@@ -18,8 +19,8 @@ class HFDatasetStorage(StorageMixin):
 
     def __init__(
         self,
-        *
-        repo_id: str,
+        *,
+        repo_id: str | None = None,
         **kwargs,
     ):
         access_token = kwargs.pop('access_token', None)
@@ -31,24 +32,25 @@ class HFDatasetStorage(StorageMixin):
             repo_id = os.environ[ENV_IANTIRTA_HF_DATASET_REPO_ID]
         self.repo_id = repo_id
 
-        from huggingface_hub import upload_file
-        self._upload_file = upload_file
+        from huggingface_hub.hf_api import HfApi
+        self._api = HfApi(token=self.access_token)
 
-    def _encode_name(self, name: str) -> str:
-        return hmac.new(
-            'karaoke_file'.encode(),
-            repr(name).encode(),
-            hashlib.sha256,
-        ).hexdigest()
+    def test_connection(self):
+        return self._api.auth_check(
+            repo_id=self.repo_id,
+            repo_type='dataset',
+            token=self.access_token,
+            write=True
+        )
 
     def upload_file(
         self,
-        *
+        *,
         src_path: str | Path,
         target_path: str,
         logger: logging.Logger | None = None,
     ) -> list[str]:
-        if Path(target_path).suffix is not None:
+        if Path(target_path).suffix:
             raise ValueError('Currently not supported uploading directly to a named path, define subfolder instead.')
 
         # we encode target_path
@@ -57,19 +59,19 @@ class HFDatasetStorage(StorageMixin):
         target_path = self._encode_name(target_path.strip('/'))
 
         file_bytes = Path(src_path).read_bytes()
-
         file_name = Path(src_path).stem
         count = 0
 
         files = []
         while file_bytes:
-            chunk = file_bytes[MAX_BYTES_PER_FILE:]
+            chunk = file_bytes[:MAX_BYTES_PER_FILE]
+            file_bytes = file_bytes[MAX_BYTES_PER_FILE:]
             count += 1
 
-            chunk_name = self._encode_name(f'{file_name}_({count})')
+            chunk_name = self._encode_name(f'{file_name}_({count:03d})')
 
             path_in_repo = f'{target_path}/{chunk_name}'
-            self._upload_file(
+            self._api.upload_file(
                 path_or_fileobj=chunk,
                 path_in_repo=path_in_repo,
                 repo_id=self.repo_id,
@@ -81,3 +83,7 @@ class HFDatasetStorage(StorageMixin):
         assert len(files) == count
 
         # download url
+        return [
+            f"https://huggingface.co/datasets/{self.repo_id}/resolve/main/{f}?download=true"
+            for f in files
+        ]

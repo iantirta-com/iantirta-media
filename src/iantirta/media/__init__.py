@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from .progress_bar import *
     from .song_lyrics import *
     from .video import *
+    from .worker import *
 else:
     import sys
     

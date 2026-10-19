@@ -1,12 +1,19 @@
-import json, os
-from pathlib import Path
+import ast
+import json
 import logging
+import os
+from contextlib import ExitStack
+from pathlib import Path
+from typing import ClassVar
+
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
-from google.oauth2.credentials import Credentials
-from contextlib import ExitStack
 
 from iantirta.media import get_context_progressbar
+
 from .base_storage import StorageMixin
 
 __all__ = [
@@ -16,8 +23,26 @@ __all__ = [
 
 ENV_DRIVE_USER_TOKEN = 'IANTIRTA_DRIVE_USER_TOKEN'
 ENV_IANTIRTA_DRIVE_ROOT_FOLDER_ID = 'IANTIRTA_DRIVE_ROOT_FOLDER_ID'
+SCOPES = ['https://www.googleapis.com/auth/drive']
+
+
+def _normalize_to_dict(variable: str | Path | dict) -> dict:
+    if isinstance(variable, (str, Path)):
+        # Normalize first
+        if Path(variable).is_file():
+            variable = Path(variable).read_text('utf-8')
+
+        try:
+            variable = json.loads(variable)
+        except json.decoder.JSONDecodeError:
+            variable = ast.literal_eval(variable)
+
+    return variable
+
 
 class DriveStorage(StorageMixin):
+    _cached_flow: ClassVar[dict[str, InstalledAppFlow]] = {}
+
     def __init__(
         self,
         *,
@@ -26,12 +51,10 @@ class DriveStorage(StorageMixin):
     ):
         access_token = kwargs.pop('access_token', None)
         if not access_token:
-            access_token = json.loads(os.environ[ENV_DRIVE_USER_TOKEN])
+            access_token = os.environ[ENV_DRIVE_USER_TOKEN]
         super().__init__(access_token=access_token, **kwargs)
 
-        self.creds: Credentials = Credentials.from_authorized_user_info(
-            self.access_token
-        )
+        self.creds = self.get_credentials(self.access_token)
 
         if not root_folder_id:
             root_folder_id = os.environ[ENV_IANTIRTA_DRIVE_ROOT_FOLDER_ID]
@@ -39,16 +62,65 @@ class DriveStorage(StorageMixin):
 
         self.service = build('drive', 'v3', credentials=self.creds)
 
-    # Auth Method
-
-    # Authenticated Method
-    def test_connection(self):
-        return self.service.files().get(
+    def test_connection(self) -> dict:
+        self.service.files().get(
             fileId=self.root_folder_id,
             fields='id',  # Requesting only 'id' minimizes network payload
             supportsAllDrives=True
         ).execute()
+        return True
 
+    # Auth Method
+    @staticmethod
+    def get_credentials(user_token: Path | str | dict | None = None) -> Credentials:
+        if not user_token:
+            raise OSError('User info token needed.')
+
+        user_token: dict = _normalize_to_dict(user_token)
+
+        creds = Credentials.from_authorized_user_info(user_token)
+        creds.refresh(Request())
+
+        return creds
+
+    @staticmethod
+    def get_credentials_from_flow(
+        *,
+        key: str,
+        **kwargs,
+    ) -> Credentials:
+        flow = DriveStorage._cached_flow.pop(key)
+        if not flow:
+            raise OSError("You need to call setup_user_token first before able to get credentials from flow")
+
+        flow.fetch_token(**kwargs)
+        return flow.credentials
+
+    @staticmethod
+    def setup_user_token(
+        *,
+        client_config: str | Path | dict,
+        key: str,
+        redirect_uri='urn:ietf:wg:oauth:2.0:oob:auto',
+        **kwargs
+    ) -> str:
+        client_config: dict = _normalize_to_dict(client_config)
+
+        flow = InstalledAppFlow.from_client_config(
+            client_config,
+            SCOPES,
+            redirect_uri=redirect_uri,
+        )
+        DriveStorage._cached_flow[key] = flow
+
+        auth_url, state = flow.authorization_url(
+            access_type="offline",
+            include_granted_scopes='true',
+            **kwargs,
+        )
+        return auth_url, state
+
+    # Authenticated Method
     def _get_folder(self, folder_name: str) -> str | None:
         query = (
             f"name='{folder_name}' "
@@ -89,27 +161,21 @@ class DriveStorage(StorageMixin):
         if folder_id := self._get_folder(folder_name):
             return folder_id
         return self._create_folder(folder_name)
-    
+
     def upload_file(
         self,
-        *
+        *,
         src_path: str | Path,
         target_path: str,
         logger: logging.Logger | None = None,
         replace: bool = True,
     ) -> list[str]:
-        if Path(target_path).suffix is not None:
+        if Path(target_path).suffix:
             raise ValueError('Currently not supported uploading directly to a named path, define subfolder instead.')
 
-        subfolder = None
-        target_path = target_path.strip('/')
-        if '/' in target_path:
-            subfolder, target_path = target_path.rsplit('/', 1)
+        target_path = self._encode_name(target_path.strip('/'))
 
-        if subfolder is not None:
-            subfolder_id = self._get_or_create_folder(subfolder)
-        else:
-            subfolder_id = self.root_folder_id
+        subfolder_id = self._get_or_create_folder(target_path)
 
         media_body = MediaFileUpload(
             str(src_path),
