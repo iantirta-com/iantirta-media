@@ -9,17 +9,23 @@ from pathlib import Path
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+from google.auth.transport.requests import Request
+from google_auth_oauthlib.flow import InstalledAppFlow
+
 from rich import inspect as i
 
 from iantirta.media import get_context_progressbar
 
 __all__ = [
     'DriveMetadata',
-    'DriveStorage',
+    'DriveStorageOld',
 ]
 
 
 _logger = logging.getLogger(__name__)
+
+
+SCOPES = ['https://www.googleapis.com/auth/drive']
 
 
 @dataclass
@@ -31,23 +37,29 @@ class DriveMetadata:
     def to_dict(self) -> dict:
         return asdict(self)
 
-class DriveStorage:
+
+class DriveStorageOld:
+    _cached_flow = {}
+
     def __init__(
         self,
-        user_token: dict | None,
-        root_folder_id: str | None,
+        user_token: dict | str | None = None,
+        root_folder_id: str | None = None,
         *,
         logger: logging.Logger | None = None
     ):
         if not user_token:
+            user_token = os.environ['IANTIRTA_DRIVE_USER_TOKEN']
+
+        if isinstance(user_token, str):
             try:
-                user_token = json.loads(os.environ['IANTIRTA_DRIVE_USER_TOKEN'])
-
+                user_token = json.loads(user_token)
+    
             except json.decoder.JSONDecodeError:
-                user_token = ast.literal_eval(os.environ['IANTIRTA_DRIVE_USER_TOKEN'])
-
-        self.user_token = user_token
+                user_token = ast.literal_eval(user_token)
         
+        self.user_token = user_token
+
         if not root_folder_id:
             root_folder_id = os.environ['IANTIRTA_DRIVE_ROOT_FOLDER_ID']
         self.root_folder_id = root_folder_id
@@ -59,6 +71,81 @@ class DriveStorage:
         if not logger:
             logger = _logger
         self.logger = logger
+
+    def test_connection(self) -> bool:
+        try:
+            self._make_service().files().get(
+                fileId=self.root_folder_id,
+                fields='id',  # Requesting only 'id' minimizes network payload
+                supportsAllDrives=True
+            ).execute()
+            return True
+        except Exception:
+            # Returns False if the ID does not exist, or if credentials fail
+            return False
+
+    @staticmethod
+    def get_gdrive_credentials(user_info: dict | None = None):
+        if not user_info:
+            raise OSError('User info token needed.')
+
+        if isinstance(user_info, str):
+            user_info = json.loads(user_info)
+
+        creds = Credentials.from_authorized_user_info(user_info)
+        creds.refresh(Request())
+
+        return creds
+
+    @staticmethod
+    def _normalize_client_config(client_config):
+        if isinstance(client_config, (str, Path)):
+            if Path(client_config).is_file():
+                client_config = Path(client_config).read_text('utf-8')
+
+            client_config = json.loads(client_config)
+
+        return client_config
+
+    @staticmethod
+    def get_gdrive_credentials_from_auth_url(
+        client_config,
+        key: str,
+        **kwargs,
+    ):
+        client_config = DriveStorage._normalize_client_config(client_config)
+
+        flow = DriveStorage._cached_flow.pop(key)
+        if not flow:
+            raise OSError()
+
+        flow.fetch_token(**kwargs)
+
+        return flow.credentials
+
+    @staticmethod
+    def request_gdrive_user_token_auth_url(
+        client_config,
+        key: str,
+        redirect_uri='urn:ietf:wg:oauth:2.0:oob:auto',
+        **kwargs
+    ) -> tuple[str, dict]:
+        client_config = DriveStorage._normalize_client_config(client_config)
+
+        flow = InstalledAppFlow.from_client_config(
+            client_config,
+            SCOPES,
+            redirect_uri=redirect_uri,
+        )
+        DriveStorage._cached_flow[key] = flow
+
+        auth_url, state = flow.authorization_url(
+            access_type="offline",
+            include_granted_scopes='true',
+            # login_hint='tirtamoto@gmail.com',
+            **kwargs,
+        )
+        return auth_url, state
 
     def _make_service(self):
         return build('drive', 'v3', credentials=self.creds)
