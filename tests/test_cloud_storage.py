@@ -34,9 +34,8 @@ def test_make_chunk_file(storage: StorageMixin, tmp_path: Path):
     assert chunk_data['count'] == len(chunk_data['files']) == expected_chunks
     count = 0
     for file in chunk_data['files']:
-        file = str(file)
-        assert '/' in file
-        parts = file.split('/')
+        file: Path
+        parts = file.parts
         assert len(parts) == 2
         count += 1
         assert parts[0] == storage._encode_name(target_path)
@@ -45,3 +44,8 @@ def test_make_chunk_file(storage: StorageMixin, tmp_path: Path):
         )
 
     assert src_file.stat().st_size == chunk_data['size']
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(pytest.main(['-v', '-s', __file__]))

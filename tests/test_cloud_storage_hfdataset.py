@@ -74,8 +74,21 @@ def test_api_hfdataset_upload_folder(hf_api: HFDatasetStorage, tmp_path: Path):
     (test_dir / "file2.txt").write_text("chunk 2")
 
     hf_api.upload_folder(
-        folder=teems
+        folder_path=test_dir,
     )
+
+def test_api_hfdataset_upload_folder_nested(hf_api: HFDatasetStorage, tmp_path: Path):
+    test_dir = tmp_path / "batch_upload_test"
+    test_dir.mkdir()
+    test_repo_dir = test_dir / 'batch_upload_test_in_repo'
+    test_repo_dir.mkdir()
+    (test_repo_dir / "file1.txt").write_text("chunk 1")
+    (test_repo_dir / "file2.txt").write_text("chunk 2")
+
+    hf_api.upload_folder(
+        folder_path=test_dir,
+    )
+
 
 if __name__ == "__main__":
     import sys
