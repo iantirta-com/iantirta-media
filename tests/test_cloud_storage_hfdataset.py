@@ -67,6 +67,16 @@ def test_api_hfdataset_upload_chunked_file_will_replace(hf_api: HFDatasetStorage
     assert len(urls) == expected_chunks, f"Expected {expected_chunks} chunks, got {len(urls)}"
 
 
+def test_api_hfdataset_upload_folder(hf_api: HFDatasetStorage, tmp_path: Path):
+    test_dir = tmp_path / "batch_upload_test"
+    test_dir.mkdir()
+    (test_dir / "file1.txt").write_text("chunk 1")
+    (test_dir / "file2.txt").write_text("chunk 2")
+
+    hf_api.upload_folder(
+        folder=teems
+    )
+
 if __name__ == "__main__":
     import sys
     sys.exit(pytest.main(['-v', '-s', __file__]))

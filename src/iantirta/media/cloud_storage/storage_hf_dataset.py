@@ -5,12 +5,13 @@ from pathlib import Path
 
 from .base_storage import StorageMixin
 
+from iantirta.media import constants
+
 __all__ = [
     'HFDatasetStorage'
 ]
 
 
-MAX_BYTES_PER_FILE = 5 * 1024 * 1024 # 5mb
 ENV_IANTIRTA_HF_TOKEN = 'IANTIRTA_HF_TOKEN'
 ENV_IANTIRTA_HF_DATASET_REPO_ID = 'IANTIRTA_HF_DATASET_REPO_ID'
 
@@ -43,6 +44,23 @@ class HFDatasetStorage(StorageMixin):
             write=True
         )
 
+    def upload_folder(
+        self,
+        *,
+        folder_path: str | Path | None = None,
+        logger: logging.Logger | None = None,
+    ):
+        if not folder_path:
+            folder_path = self.staging_dir
+        return self._api.upload_folder(
+            folder_path=folder_path,
+            path_in_repo='.',
+            repo_id=self.repo_id,
+            repo_type='dataset',
+            token=self.access_token,
+            commit_message="Batch upload from worker"
+        )
+
     def upload_file(
         self,
         *,
@@ -64,8 +82,8 @@ class HFDatasetStorage(StorageMixin):
 
         files = []
         while file_bytes:
-            chunk = file_bytes[:MAX_BYTES_PER_FILE]
-            file_bytes = file_bytes[MAX_BYTES_PER_FILE:]
+            chunk = file_bytes[:constants.MAX_BYTES_PER_FILE]
+            file_bytes = file_bytes[constants.MAX_BYTES_PER_FILE:]
             count += 1
 
             chunk_name = self._encode_name(f'{file_name}_({count:03d})')

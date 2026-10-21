@@ -15,6 +15,7 @@ from googleapiclient.http import MediaFileUpload
 from iantirta.media import get_context_progressbar
 
 from .base_storage import StorageMixin
+from ..tools.google import GoogleApi
 
 __all__ = [
     'DriveStorage'
@@ -79,15 +80,7 @@ class DriveStorage(StorageMixin):
     # Auth Method
     @staticmethod
     def get_credentials(user_token: Path | str | dict | None = None) -> Credentials:
-        if not user_token:
-            raise OSError('User info token needed.')
-
-        user_token: dict = _normalize_to_dict(user_token)
-
-        creds = Credentials.from_authorized_user_info(user_token)
-        creds.refresh(Request())
-
-        return creds
+        return GoogleApi.creds_from_user_token(user_token=user_token)
 
     @staticmethod
     def get_credentials_from_flow(
@@ -95,12 +88,7 @@ class DriveStorage(StorageMixin):
         key: str,
         **kwargs,
     ) -> Credentials:
-        flow = DriveStorage._cached_flow.pop(key)
-        if not flow:
-            raise OSError("You need to call setup_user_token first before able to get credentials from flow")
-
-        flow.fetch_token(**kwargs)
-        return flow.credentials
+        return GoogleApi.creds_from_flow_token(key=key, **kwargs)
 
     @staticmethod
     def setup_user_token(
@@ -110,21 +98,12 @@ class DriveStorage(StorageMixin):
         redirect_uri='urn:ietf:wg:oauth:2.0:oob:auto',
         **kwargs
     ) -> str:
-        client_config: dict = _normalize_to_dict(client_config)
-
-        flow = InstalledAppFlow.from_client_config(
-            client_config,
-            SCOPES,
+        return GoogleApi.get_auth_url(
+            key=key,
+            client_config=client_config,
             redirect_uri=redirect_uri,
+            **kwargs
         )
-        DriveStorage._cached_flow[key] = flow
-
-        auth_url, state = flow.authorization_url(
-            access_type="offline",
-            include_granted_scopes='true',
-            **kwargs,
-        )
-        return auth_url, state
 
     # Authenticated Method
     def _get_folder(self, folder_name: str) -> str | None:
