@@ -70,6 +70,10 @@ class DriveStorage(StorageMixin):
 
         self.service = build('drive', 'v3', credentials=self.creds)
 
+    @property
+    def download_endpoint(self) -> str:
+        return ''
+
     def test_connection(self) -> dict:
         self.service.files().get(
             fileId=self.root_folder_id,

@@ -36,6 +36,10 @@ class HFDatasetStorage(StorageMixin):
         from huggingface_hub.hf_api import HfApi
         self._api = HfApi(token=self.access_token)
 
+    @property
+    def download_endpoint(self) -> str:
+        return 'https://huggingface.co/datasets/' + self.repo_id + '/resolve/main/'
+
     def test_connection(self):
         return self._api.auth_check(
             repo_id=self.repo_id,

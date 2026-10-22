@@ -27,6 +27,10 @@ class StorageMixin:
             staging_dir = constants.DEFAULT_UPLOAD_STAGING_DIR
         self.staging_dir = Path(staging_dir)
 
+    @property
+    def download_endpoint(self) -> str:
+        raise NotImplementedError()
+
     @abstractmethod
     def test_connection(self):
         raise NotImplementedError()
@@ -92,7 +96,9 @@ class StorageMixin:
             chunk_file_path = dest_dir / chunk_name
             chunk_file_path.write_bytes(chunk_bytes)
 
-            files.append(chunk_file_path.relative_to(self.staging_dir).as_posix())
+            files.append(
+                self.download_endpoint + chunk_file_path.relative_to(self.staging_dir).as_posix()
+            )
 
         return {
             'suffix': src_path.suffix,
