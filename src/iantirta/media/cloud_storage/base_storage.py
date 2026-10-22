@@ -92,7 +92,7 @@ class StorageMixin:
             chunk_file_path = dest_dir / chunk_name
             chunk_file_path.write_bytes(chunk_bytes)
 
-            files.append(chunk_file_path.relative_to(self.staging_dir))
+            files.append(chunk_file_path.relative_to(self.staging_dir).as_posix())
 
         return {
             'suffix': src_path.suffix,
