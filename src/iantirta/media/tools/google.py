@@ -1,11 +1,16 @@
+import ast
 import json
 from pathlib import Path
-import ast
 from typing import ClassVar
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
+
+GAUTH_MESSAGE_TEMPLATE = """To authorize, visit this URL in any browser:\n
+    '%(auth_url)s'\n
+After approving, Google will display an authorization code.
+"""
 
 
 def _normalize_to_dict(variable: str | Path | dict) -> dict:
@@ -37,10 +42,13 @@ class GoogleApi:
         key: str,
         client_config: str | Path | dict,
         scopes: list[str],
-        redirect_uri='urn:ietf:wg:oauth:2.0:oob:auto',
+        redirect_uri='urn:ietf:wg:oauth:2.0:oob:auto',  # OOB is deprecated.
         **kwargs,
     ) -> tuple[str, str]:
-        """Get auth url and state for google auth."""
+        """Get auth url and state for google auth.
+        Returns:
+            Tuple[str, str]: `auth_url` and `state`
+        """
         client_config = _normalize_to_dict(client_config)
 
         flow = InstalledAppFlow.from_client_config(
@@ -53,6 +61,8 @@ class GoogleApi:
         auth_url, state = flow.authorization_url(
             access_type="offline",
             include_granted_scopes='true',
+            prompt='consent',
+            token_usage="remote",
             **kwargs,
         )
         return auth_url, state

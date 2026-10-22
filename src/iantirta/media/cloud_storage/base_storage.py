@@ -54,7 +54,13 @@ class StorageMixin:
         src_path: str | Path,
         target_path: str,
     ) -> dict:
-        """Will break any given file into separated chunk"""
+        """Will break any given file into separated chunk.
+
+        Example:
+            src: path/filename.txt
+            target_path: target/path/
+            will convert to: encoded_target_path/encoded_filename
+        """
         if Path(target_path).suffix:
             raise ValueError('Currently not supported uploading directly to a named path, define subfolder instead.')
 

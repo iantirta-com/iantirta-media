@@ -5,6 +5,7 @@ import os
 from contextlib import ExitStack
 from pathlib import Path
 from typing import ClassVar
+import warnings
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -80,6 +81,7 @@ class DriveStorage(StorageMixin):
     # Auth Method
     @staticmethod
     def get_credentials(user_token: Path | str | dict | None = None) -> Credentials:
+        warnings.warn("Deprecated method of setup user token, use `iantirta.media.tools.google.GoogleApi` instead", DeprecationWarning)
         return GoogleApi.creds_from_user_token(user_token=user_token)
 
     @staticmethod
@@ -88,6 +90,7 @@ class DriveStorage(StorageMixin):
         key: str,
         **kwargs,
     ) -> Credentials:
+        warnings.warn("Deprecated method of setup user token, use `iantirta.media.tools.google.GoogleApi` instead", DeprecationWarning)
         return GoogleApi.creds_from_flow_token(key=key, **kwargs)
 
     @staticmethod
@@ -98,8 +101,10 @@ class DriveStorage(StorageMixin):
         redirect_uri='urn:ietf:wg:oauth:2.0:oob:auto',
         **kwargs
     ) -> str:
+        warnings.warn("Deprecated method of setup user token, use `iantirta.media.tools.google.GoogleApi` instead", DeprecationWarning)
         return GoogleApi.get_auth_url(
             key=key,
+            scopes=SCOPES,
             client_config=client_config,
             redirect_uri=redirect_uri,
             **kwargs
