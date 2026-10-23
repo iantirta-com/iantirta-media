@@ -15,3 +15,8 @@ class GPUWorker:
     @abstractmethod
     def run(self, folder: str):
         raise NotImplementedError()
+
+
+if __name__ == "__main__":
+    import time
+    time.sleep(30)

@@ -1,12 +1,11 @@
-import pytest
 import os
-
 from pathlib import Path
 
-from iantirta.media import DriveStorage
-from iantirta.media.tools.google import GoogleApi
-from iantirta.media.cloud_storage.storage_gdrive import SCOPES
+import pytest
 
+from iantirta.media import DriveStorage
+from iantirta.media.cloud_storage.storage_gdrive import SCOPES
+from iantirta.media.tools.google import GoogleApi
 
 pytestmark = pytest.mark.manual
 
