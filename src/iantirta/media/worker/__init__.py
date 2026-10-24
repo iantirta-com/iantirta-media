@@ -7,6 +7,7 @@ from iantirta.lazy_import import LazyModule, define_import_structure
 
 if TYPE_CHECKING:
     from .worker_kaggle import *
+    from .worker_colab import *
 else:
     import sys
     

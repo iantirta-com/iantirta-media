@@ -16,32 +16,34 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import base64
+import contextlib
 import datetime
+import json
 import logging
 import os
+import re
+import signal
 import time
+import urllib.error
 import uuid
+from collections.abc import Generator
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import IO, TYPE_CHECKING
+from urllib.parse import urlencode
+from urllib.request import urlopen
 
-from colab_cli.client import (
-    Accelerator,
-    ColabRequestError,
-    PostAssignmentResponse,
-    Variant,
-)
-from colab_cli.runtime import ColabRuntime
-from colab_cli.state import SessionState
-from colab_cli.utils import get_status_code, is_terminal_error
+import filelock
+import nbformat
 from google.auth.transport import requests as google_requests
-from colab_cli.commands.session import (
-    _is_scope_error,
-    _scope_remediation_message,
-    spawn_keep_alive,
-)
+from nbformat.v4 import new_output
+
 from iantirta.media.tools.google import GoogleApi
 from iantirta.media.worker.worker_mixin import GPUWorker
-from colab_cli import auth
-auth.TOKEN_CONFIG_PATH
+
+if TYPE_CHECKING:
+    from colab_cli.state import SessionState
 
 __all__ = [
     "ColabWorker"
@@ -60,35 +62,220 @@ PUBLIC_SCOPES = [
 ]
 
 
+TITLE_REGEX = re.compile(r"^\s*#\s*@title\s+(.*)", re.MULTILINE)
+
+
+def _is_scope_error(e: Exception) -> bool:
+    """True if a ColabRequestError's response body indicates a missing OAuth scope.
+
+    The frontend returns a `google.rpc.Status` with `code=7` (PERMISSION_DENIED)
+    and a `DebugInfo` payload mentioning `SCOPE_NOT_PERMITTED` /
+    "insufficient authentication scopes". Match on either substring so we
+    don't depend on the exact wording of one of them.
+    """
+    body = getattr(e, "response_body", None) or ""
+    body_str = str(body)
+    return (
+        "SCOPE_NOT_PERMITTED" in body_str
+        or "insufficient authentication scopes" in body_str
+    )
+
+
+def _scope_remediation_message() -> str:
+    """User-facing remediation hint, tailored per auth provider.
+
+    Keep-alive is a Tunnel Frontend ping against the Colab session backend
+    (colab.research.google.com), authenticated with the user's own Gaia bearer
+    token — the same credential and host used to assign the VM. A missing-scope
+    error here is rare (assignment would normally have failed first), but if it
+    happens the fix is to re-authenticate with the standard Colab scopes.
+    """
+    common = (
+        "Keeping the session alive requires valid Colab credentials for "
+        "colab.research.google.com."
+    )
+
+    # OAuth2 (and any future provider) fallback.
+    return (
+        f"{common}\n"
+        "Delete the cached token at ~/.config/colab-cli/token.json and "
+        "re-run `colab new` to trigger a fresh consent flow."
+    )
+
+
+def save_output(outputs, cell):
+    if cell is None:
+        return
+
+    if not hasattr(cell, "outputs"):
+        cell.outputs = []
+    else:
+        cell.outputs.clear()
+
+    for out in outputs:
+        if out.get("output_type") == "stream":
+            cell.outputs.append(
+                new_output(
+                    output_type="stream",
+                    name=out.get("name", "stdout"),
+                    text=out.get("text", ""),
+                )
+            )
+        elif "data" in out:
+            output_type = out.get("output_type", "display_data")
+            cell.outputs.append(
+                new_output(
+                    output_type=output_type,
+                    data=out["data"],
+                    metadata=out.get("metadata", {}),
+                )
+            )
+        elif out.get("output_type") == "error":
+            cell.outputs.append(
+                new_output(
+                    output_type="error",
+                    ename=out.get("ename", "Error"),
+                    evalue=out.get("evalue", ""),
+                    traceback=out.get("traceback", []),
+                )
+            )
+
+
+def kill_process(pid: int):
+    """Safely terminates a process by PID."""
+    if not pid:
+        return
+    try:
+        os.kill(pid, signal.SIGTERM)
+        # Give it a moment to exit
+        for _ in range(5):
+            time.sleep(0.1)
+            os.kill(pid, 0)
+    except OSError:
+        # Already dead
+        pass
+    except Exception:
+        logging.debug(f"Failed to kill process {pid}")
+
+
+
+BOOTSTRAP_SCRIPT = """
+import base64
+import subprocess
+import sys
+from pathlib import Path
+
+# Write the actual payload to disk
+code = base64.b64decode('{encoded_code}')
+Path('/content/job.py').write_bytes(code)
+
+# Launch it completely detached from this Jupyter kernel
+subprocess.Popen(
+    [sys.executable, '/content/job.py'],
+    stdout=open('/content/job.log', 'a'),
+    stderr=subprocess.STDOUT,
+    start_new_session=True  # CRITICAL: Prevents termination when WebSocket closes
+)
+print("JOB_LAUNCHED_SUCCESSFULLY")
+"""
+
+
 class ColabWorker(GPUWorker):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+
+        self.name = 'colab_worker'
 
         creds = GoogleApi.creds_from_user_token(
             user_token=self.access_token
         )
         session = google_requests.AuthorizedSession(creds)
 
-        from colab_cli import client
-        self._api = client.Client(client.Prod(), session)
-
+        from colab_cli import client, common
+        self.client = client.Client(client.Prod(), session)
+        self.state = common.state
+        self.state._client = self.client
+        self.state.config_path = os.path.expanduser("~/.cache/iantirta/worker/colab-sessions.json")
+        self.creds = creds
 
     def test_connection(self):
-        print(self._api.list_assignments())
-        # res = self._api.assign(
-        #     uuid.uuid4(),
-        # )
-        # from rich import inspect as i
-        # i(res)
-    
-    def run2(self):
-        from colab_cli import client
+        token = self.creds.token
 
-        res = self._api.assign(
-            uuid.uuid4(),
-            # variant=variant, accelerator=accelerator
-        )
+        if not token:
+            raise OSError("Google credentials have no valid token or empty token")
 
+        qs = urlencode({"access_token": token})
+        url = f"https://oauth2.googleapis.com/tokeninfo?{qs}"
+        try:
+            with urlopen(url, timeout=10) as resp:
+                body = resp.read().decode("utf-8")
+                info = json.loads(body)
+        except urllib.error.HTTPError as e:
+            # tokeninfo returns 400 for invalid/expired/revoked tokens with a
+            # JSON body like {"error":"invalid_token","error_description":"..."}.
+            # Surface that body so the developer can see *why* it was rejected.
+            try:
+                err_body = e.read().decode("utf-8")
+            except Exception:
+                err_body = ""
+            raise urllib.error.HTTPError(
+                f"Token Info returned with status: {e.code} : {err_body or e.reason}"
+            )
+
+        email = info.get("email") or "<unavailable: token has no userinfo.email scope>"
+        expires_in = info.get("expires_in")
+        try:
+            expires_min = int(expires_in) // 60
+            expires_str = f"{expires_min}m"
+        except (TypeError, ValueError):
+            expires_str = str(expires_in) if expires_in else "<unknown>"
+
+        audience = info.get("audience") or info.get("aud") or "<none>"
+        scopes = (info.get("scope") or "").split()
+
+        data = {
+            'Email': email,
+            'Audience': audience,
+            'Expires': expires_str,
+            'Scopes': scopes or '<none>'
+        }
+        return data
+
+    def _new(self, worker_name: str | None = None) -> 'SessionState':
+        from colab_cli import client, state, utils
+
+        name = worker_name or uuid.uuid4().hex[:6]
+
+        accelerator = client.Accelerator.NONE # T4
+        variant = client.Variant.DEFAULT # GPU
+        shape = client.Shape.STANDARD
+
+        try:
+            res = self.client.assign(
+                uuid.uuid4(), variant=variant, accelerator=accelerator, shape=shape
+            )
+        except client.TooManyAssignmentsError:
+            raise OSError(
+                "[colab] Allocation refused (precondition failed). This can mean "
+                "too many active sessions, or a temporary usage or capacity "
+                "limit for the requested runtime. Run `colab stop` to free up a "
+                "session, wait and retry, or try a different accelerator."
+            )
+        except client.ColabRequestError as e:
+            # The Colab backend returns 400 when the caller is not entitled to the
+            # requested accelerator (e.g. no A100 quota). Translate that to a
+            # friendly, actionable message instead of a raw traceback. We only
+            # interpret it this way when an accelerator was actually requested;
+            # otherwise we re-raise so the user sees the real cause.
+            if utils.get_status_code(e) == 400 and accelerator != client.Accelerator.NONE:
+                raise OSError(
+                    f"[colab] Backend rejected accelerator '{accelerator.value}'. "
+                    "You may not have quota or entitlement for this accelerator on "
+                    "your account. Try a different one (e.g. --gpu T4) or omit "
+                    "--gpu/--tpu for a CPU runtime."
+                )
+            raise
+        
         if isinstance(res, client.PostAssignmentResponse):
             token = res.runtime_proxy_info.token
             url = res.runtime_proxy_info.url
@@ -102,317 +289,67 @@ class ColabWorker(GPUWorker):
             url = res.runtime_proxy_info.url if hasattr(res, "runtime_proxy_info") else ""
             endpoint = res.endpoint
 
-        try:
-            self._api.keep_alive_assignment(endpoint)
-        except Exception:
-            self._api.unassign(endpoint)
-
-        runtime = ColabRuntime(
-            url,
-            token,
-        )
-
-        try:
-            runtime.execute_code(
-                "import os; os.makedirs('/content', exist_ok=True); "
-                "os.chdir('/content')"
-            )
-        finally:
-            runtime.stop(shutdown_kernel=True)
-
-    # TODO(sethtroisi): dedupe this logic with similar in session.py
-    @staticmethod
-    def _resolve_accelerator(gpu: str | None, tpu: str | None):
-        """Mirror the mapping logic in `commands.session.new`. Centralised so the
-        two commands stay in lock-step on supported accelerator names.
-        """
-        if tpu:
-            variant = Variant.TPU
-            accelerator = Accelerator.V5E1 if tpu.lower() == "v5e1" else Accelerator.V6E1
-            return variant, accelerator
-        if gpu:
-            mapping = {
-                "a100": Accelerator.A100,
-                "h100": Accelerator.H100,
-                "l4": Accelerator.L4,
-                "t4": Accelerator.T4,
-                "g4": Accelerator.G4,
-            }
-            return Variant.GPU, mapping.get(gpu.lower(), Accelerator.A100)
-        return Variant.DEFAULT, Accelerator.NONE
-
-    @staticmethod
-    def _strip_shebang(body: str) -> str:
-        """Remove a leading `#!...\\n` if present. The remote kernel doesn't need
-        or understand it (it's a contract between the local kernel and the file's
-        executable bit), and leaving it in just adds noise.
-        """
-        if body.startswith("#!"):
-            nl = body.find("\n")
-            return body[nl + 1 :] if nl != -1 else ""
-        return body
-
-    @staticmethod
-    def _build_script_payload(script_path: str, script_args: list[str]) -> str:
-        """Wrap the script body so it executes with native-`python`-like semantics.
-
-        Specifically:
-        - `sys.argv = [<basename>, *script_args]` so `argparse` etc. work.
-        - `__name__ = '__main__'` so `if __name__ == "__main__":` guards fire.
-        - Suppress the IPython UserWarning "To exit: use 'exit', 'quit', or
-            Ctrl-D." which fires whenever the script calls `sys.exit(...)`. This
-            warning is meaningful in an interactive REPL, but for `colab run` it
-            is pure noise that doesn't appear when running `python script.py`.
-
-        The script body is appended verbatim; the prelude is short so any
-        traceback line numbers from user code remain close to the original.
-        """
-        basename = os.path.basename(script_path)
-        with open(script_path, "r", encoding="utf-8") as f:
-            body = f.read()
-
-        # `repr()` produces a safe, round-trippable Python literal for arbitrary
-        # strings (handles quotes, backslashes, non-ASCII).
-        argv_literal = f"[{', '.join(repr(x) for x in [basename] + script_args)}]"
-
-        return (
-            "import sys, warnings\n"
-            f"sys.argv = {argv_literal}\n"
-            "__name__ = '__main__'\n"
-            "warnings.filterwarnings('ignore', message=\"To exit: use\")\n"
-            + ColabWorker._strip_shebang(body)
-        )
-
-    @staticmethod
-    def _is_systemexit(out) -> bool:
-        """True iff this output is a `raise SystemExit(...)` (a.k.a. `sys.exit`)."""
-        return out.get("output_type") == "error" and out.get("ename") == "SystemExit"
-    
-    @staticmethod
-    def _systemexit_code(out) -> int:
-        """Map a SystemExit kernel output back to a CPython-style integer exit code.
-
-        CPython conventions (mirrored):
-        - `sys.exit()` / `sys.exit(None)` / `sys.exit(0)` -> 0
-        - `sys.exit(<int>)`                                -> <int>
-        - `sys.exit('msg')` (any non-int)                  -> 1
-        """
-        evalue = (out.get("evalue") or "").strip()
-        if evalue in ("", "None", "0"):
-            return 0
-        try:
-            return int(evalue)
-        except ValueError:
-            return 1
-
-    @staticmethod
-    def _make_run_output_hook(output_image=None):
-        """Build an `output_hook` for `runtime.execute_code` that:
-        - Routes normal output to `display_output` (stream/image/error).
-        - Suppresses the `SystemExit` traceback so `sys.exit(0)` is silent (it
-            wouldn't print anything under `python script.py` either) and
-            `sys.exit(N)` doesn't dump a noisy IPython-styled traceback when the
-            intent is "shell exit code N".
-
-        The kernel still RETURNS the SystemExit output to us (so we can derive the
-        exit code in `_exit_code_from_outputs`); we just don't render it.
-        """
-        # Imported here to avoid a circular import via execution.py at module load.
-        from colab_cli.commands.execution import display_output
-
-        def hook(out):
-            if ColabWorker._is_systemexit(out):
-                return
-            display_output(out, output_image)
-
-        return hook
-
-    @staticmethod
-    def _exit_code_from_outputs(outputs) -> int:
-        """Derive the CLI's exit code from the kernel's outputs for a single cell.
-
-        A `SystemExit` is treated like CPython would treat the same call from a
-        plain `python script.py` invocation. Any *other* error (uncaught
-        exception, NameError, etc.) is exit 1.
-        """
-        code = 0
-        for o in outputs:
-            if o.get("output_type") != "error":
-                continue
-            if ColabWorker._is_systemexit(o):
-                ec = ColabWorker._systemexit_code(o)
-                # Last SystemExit wins, matching the runtime — and any non-zero
-                # eclipses any prior zero.
-                code = ec if ec != 0 else code
-            else:
-                return 1
-        return code
-
-    @staticmethod
-    def _teardown(name: str, s: SessionState, *, reason: str) -> None:
-        """Best-effort full session teardown: kill the keep-alive daemon, ask the
-        remote kernel to shut down, unassign the VM, and remove local state.
-
-        Mirrors `commands.session.stop` but with a richer history event reason and
-        swallowing all errors (we don't want a teardown failure to mask the user's
-        exit code).
-        """
-        from colab_cli.common import kill_process, state
-
-        _logger.info(f"[colab] Stopping session '{name}'...", err=True)
-        if s.keep_alive_pid:
-            try:
-                kill_process(s.keep_alive_pid)
-            except Exception:
-                pass
-
-        try:
-            rt = ColabRuntime(s.url, s.token, kernel_id=s.kernel_id)
-            rt.stop(shutdown_kernel=True)
-        except Exception:
-            pass
-
-        try:
-            state.client.unassign(s.endpoint)
-        except Exception:
-            pass
-
-        try:
-            state.store.remove(name)
-        except Exception:
-            pass
-
-        try:
-            state.history.log_event(name, "session_terminated", {"reason": reason})
-        except Exception:
-            pass
-        _logger.info("[colab] Session terminated.", err=True)
-
-    def run(
-        self,
-        script,
-        script_args=None,
-        session=None,
-        tpu=None,
-        gpu=None,
-        keep=False,
-        timeout=30.0
-    ):
-        """Run a Python script on a fresh Colab VM, then release the VM
-
-        Designed to be used as a shebang interpreter, e.g.
-
-            #!/usr/bin/env -S colab run --gpu T4
-
-        so a single executable .py file can rent a GPU, run, and clean up after
-        itself.
-        """
-        from colab_cli.common import state
-
-        script_args = script_args or []
-
-        # AGENTS.md item 10: validate locally BEFORE allocating a VM. A typo'd
-        # script path should not cost the user real compute.
-        if not os.path.isfile(script):
-            raise FileNotFoundError(f"Script file not found: {script}")
-
-        name = session or f"run-{uuid.uuid4().hex[:6]}"
-        variant, accelerator = self._resolve_accelerator(gpu, tpu)
-
-        # typer.echo(f"[colab] Creating session '{name}'...", err=True)
-        try:
-            res = state.client.assign(
-                uuid.uuid4(), variant=variant, accelerator=accelerator
-            )
-        except ColabRequestError as e:
-            # Mirror `colab new`'s friendly accelerator-quota message.
-            if get_status_code(e) == 400 and accelerator != Accelerator.NONE:
-                typer.echo(
-                    f"[colab] Backend rejected accelerator '{accelerator.value}'. "
-                    "You may not have quota or entitlement for this accelerator on "
-                    "your account. Try a different one (e.g. --gpu T4) or omit "
-                    "--gpu/--tpu for a CPU runtime.",
-                    err=True,
-                )
-                raise typer.Exit(code=1)
-            raise
-
-        if isinstance(res, PostAssignmentResponse):
-            token = res.runtime_proxy_info.token
-            url = res.runtime_proxy_info.url
-            endpoint = res.endpoint
-        else:
-            token = (
-                res.runtime_proxy_info.token
-                if hasattr(res, "runtime_proxy_info")
-                else getattr(res, "runtime_proxy_token", "")
-            )
-            url = res.runtime_proxy_info.url if hasattr(res, "runtime_proxy_info") else ""
-            endpoint = res.endpoint
-
-        s = SessionState(
+        s = state.SessionState(
             name=name,
             token=token,
             url=url,
             endpoint=endpoint,
+            token_expires_at=(
+                res.runtime_proxy_info.expires_at()
+                if hasattr(res, "runtime_proxy_info")
+                else None
+            ),
             variant=variant.value,
             accelerator=accelerator.value,
+            machine_shape=(
+                client.Shape.HIGH_RAM.name if shape == client.Shape.HIGH_RAM else client.Shape.STANDARD.name
+            ),
         )
 
-        # Pre-flight keep-alive: same scope-detection dance as `colab new` so a
-        # missing OAuth scope doesn't leak a billable assignment.
-        try:
-            state.client.keep_alive_assignment(endpoint)
-        except ColabRequestError as e:
-            if get_status_code(e) == 403 and _is_scope_error(e):
-                typer.echo(
-                    "[colab] Keep-alive pre-flight failed: your credentials "
-                    "are missing an OAuth scope required by Colab.\n",
-                    err=True,
-                )
-                typer.echo(_scope_remediation_message(state.auth_provider), err=True)
-                try:
-                    state.client.unassign(endpoint)
-                except Exception:
-                    pass
-                raise typer.Exit(code=1)
-            # Other failures: don't block — the daemon will retry.
-
-        # AGENTS.md item 17: persist BEFORE spawning the daemon so the daemon's
-        # initial state.store.get(name) doesn't race the parent.
-        state.store.add(s)
-        s.keep_alive_pid = spawn_keep_alive(
-            endpoint,
-            name,
-            auth_provider=state.auth_provider,
-            config_path=state.config_path,
-        )
-        state.store.add(s)
-        state.history.log_event(
+        self.state.store.add(s)
+        self.state.history.log_event(
             name,
             "session_created",
             {
                 "endpoint": endpoint,
                 "variant": variant.value,
                 "accelerator": accelerator.value,
-                "via": "run",
+                "machine_shape": s.machine_shape,
             },
         )
-        _logger.info(f"[colab] Session READY ({name}). Executing {script}...", err=True)
 
-        # ----- Execute the script -------------------------------------------------
-        exit_code = 0
-        cleanup_reason = "run_completed"
+        return s
 
+    def new(self, worker_name: str | None = None) -> 'SessionState':
+        if not worker_name:
+            worker_name = self.name
+
+        try:
+            s_name = self.state.resolve_session(worker_name)
+            s = self.state.get_session(s_name)
+        except Exception:  # noqa: BLE001
+            s = None
+
+        if not s:
+            s = self._new(worker_name)
+
+        return s
+
+    def _exec(self, s: 'SessionState', code: str, *, name: str | None=None):
+        from colab_cli import runtime, utils
+
+        if not s:
+            s = self.new(name)
+        
         def on_started(kid):
             s.kernel_id = kid
-            state.store.add(s)
+            self.state.store.add(s)
 
         def on_sess_started(sid):
             s.session_id = sid
-            state.store.add(s)
+            self.state.store.add(s)
 
-        runtime = ColabRuntime(
+        rt = runtime.ColabRuntime(
             s.url,
             s.token,
             kernel_id=s.kernel_id,
@@ -422,74 +359,140 @@ class ColabWorker(GPUWorker):
         )
 
         try:
-            # Same /content prelude as `colab exec` for consistency.
-            try:
-                runtime.execute_code(
-                    "import os; os.makedirs('/content', exist_ok=True); "
-                    "os.chdir('/content')"
+            # Ensure we are in /content which is the standard Colab working directory
+            rt.execute_code(
+                "import os; os.makedirs('/content', exist_ok=True); os.chdir('/content')"
+            )
+        except Exception as e:
+            if utils.is_terminal_error(e):
+                self.state.prune_session(s.name)
+                raise OSError(
+                    f"[colab] Session '{s.name}' appears to be lost (404/401). Cleaning up."
                 )
-            except Exception as e:
-                if is_terminal_error(e):
-                    typer.echo(
-                        f"[colab] Session '{name}' appears to be lost (404/401).",
-                        err=True,
-                    )
-                    state.prune_session(name)
-                    raise typer.Exit(1)
-                raise
+            raise
 
-            payload = self._build_script_payload(script, script_args)
-            s.running = f"run({os.path.basename(script)})"
+        try:
+            s.running = "background_job(code_exec)"
             s.last_execution = (
-                script,
+                "code_exec",
                 None,
                 datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             )
-            state.store.add(s)
+            self.state.store.add(s)
+            
+            outputs = rt.execute_code(code, timeout=30.0)
+            
+            _logger.debug(
+                f"Worker ({s.name}) execution:\n"
+                f"  code:\n"
+                f"{'='*50}\n"
+                f"{code}\n"
+                f"{'='*50}\n"
+                f"  outputs:\n"
+                f"{'='*50}\n"
+                f"{outputs}\n"
+            )
 
-            try:
-                st = time.time()
-                print("starting")
-                outputs = runtime.execute_code(
-                    payload,
-                    # output_hook=self._make_run_output_hook(),
-                    # output_hook=print,
-                    timeout=timeout
-                )
-                print("done", time.time() - st)
-            except Exception:
-                # Genuine transport-level failure. Cleanup still happens via the
-                # outer finally; surface non-zero exit so callers/CI notice.
-                exit_code = 1
-                cleanup_reason = "run_failed"
-                raise
-            else:
-                exit_code = self._exit_code_from_outputs(outputs)
-                if exit_code != 0:
-                    cleanup_reason = "run_failed"
-                state.history.log_event(
-                    name,
-                    "execution",
-                    {"code": payload, "outputs": outputs, "via": "run"},
-                )
         finally:
             s.running = None
-            state.store.add(s)
-            # Best-effort runtime close (keeps remote kernel alive for --keep).
-            try:
-                runtime.stop()
-            except Exception:
-                pass
+            self.state.store.add(s)
+            rt.stop()
 
-            if not keep:
-                self._teardown(name, s, reason=cleanup_reason)
+    def kernel_push(self, s: 'SessionState', file: str, *, name: str | None=None):
+        if not s:
+            s = self.new(name)
 
-        if exit_code != 0:
-            raise RuntimeError(f"Error exit code: {exit_code}")
+        if not os.path.isfile(file):
+            raise FileNotFoundError(f"Script file not found: {file}")
+
+        raw_code = Path(file).read_text(encoding='utf-8')
+        
+        encoded_code = base64.b64encode(raw_code.encode('utf-8')).decode('utf-8')
+
+        code = BOOTSTRAP_SCRIPT.format(encoded_code=encoded_code)
+        outputs = self._exec(s, code)
+
+        _logger.info(f"Colab job submitted to {s.name}. Bootstrap outputs: {outputs}")
+
+    def exec_code(self, s: 'SessionState', code: str, *, name: str | None=None):
+        if not s:
+            s = self.new(name)
+        return self._exec(s, code)
+
+    def run(self, folder: str):
+        s = self.new(self.name)
+        # ----- Execute the script -------------------------------------------------
+        # Folder is a folder in kaggle worker, but a file path in google colab worker
+        self.kernel_push(s, folder,)
+
+    def _close(self, s: 'SessionState'):
+        """Best-effort full session teardown: kill the keep-alive daemon, ask the
+        remote kernel to shut down, unassign the VM, and remove local state.
+
+        Mirrors `commands.session.stop` but with a richer history event reason and
+        swallowing all errors (we don't want a teardown failure to mask the user's
+        exit code).
+        """
+        from colab_cli import runtime
+    
+        _logger.info(f"[colab] Stopping session '{s.name}'...")
+        try:
+            # The script may have outlived the proxy token.
+            fresh = self.state.get_session(s.name, ignore_missing_session=True)
+            if fresh:
+                rt = runtime.ColabRuntime(fresh.url, fresh.token, kernel_id=fresh.kernel_id)
+                rt.stop(shutdown_kernel=True)
+        except Exception:
+            pass
+
+        try:
+            self.state.client.unassign(s.endpoint)
+        except Exception:
+            pass
+
+        try:
+            self.state.store.remove(s.name)
+        except Exception:
+            pass
+
+        try:
+            self.state.history.log_event(s.name, "session_terminated", {"reason": 'close'})
+        except Exception:
+            pass
+        
+        _logger.info("[colab] Session terminated.")
+
+    def close(self, s: 'SessionState | None' = None, *, name: str | None = None):
+        if not s:
+            s = self.new(name)
+
+        return self._close(s)
+
+    def get_quota(self):
+        return self.client.get_consumption_user_info()
 
 if __name__ == "__main__":
-    from pathlib import Path
+    from iantirta.telemetry import netsvc
+    netsvc.setup_logger("__main__", default_level=logging.DEBUG)
+#     from pathlib import Path
+    from pprint import pprint
     colab = ColabWorker(access_token=os.environ['IANTIRTA_COLAB_USER_TOKEN'])
-    colab.test_connection()
-    colab.run((Path(__file__).parent / 'worker_mixin.py').as_posix())
-    # colab.run(__file__)
+    # pprint(colab.get_quota())
+#     # pprint(colab.test_connection())
+#     # pprint(colab.new('test_worker'))
+#     # pprint(colab.colab_session.resolve_session(None))
+#     # pprint(colab.colab_session.store.get('test_worker'))
+    s = colab.new()
+    # pprint(s)
+#     # pprint(colab.run((Path(__file__).parent / 'worker_mixin.py').as_posix()))
+    code = """
+!ls
+!cat job.log
+!cat job.py
+!pgrep -f "python /content/job.py"
+# !pgrep -f /content/job.py
+"""
+    pprint(colab.exec_code(s, code))
+    # pprint(colab.close(s))
+#     # pprint(colab.exec(s, (Path(__file__).parent / 'worker_mixin.py').as_posix()))
+#     # colab.run(__file__)
