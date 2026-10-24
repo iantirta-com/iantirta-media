@@ -29,7 +29,7 @@ class StorageMixin:
 
     @property
     def download_endpoint(self) -> str:
-        raise NotImplementedError()
+        return ''
 
     @abstractmethod
     def test_connection(self):

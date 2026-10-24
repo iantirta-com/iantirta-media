@@ -57,7 +57,7 @@ lyrics = ["requests", "iantirta-text"]
 
 drive = ['google-auth', 'google-api-python-client', 'google-auth-oauthlib']
 hf = ['huggingface_hub']
-colab = ['google-colab-cli']
+colab = ['google-colab-cli; python_version >= "3.11"']
 kaggle = ['kaggle']
 
 storage = ['iantirta-media[hf, drive]']

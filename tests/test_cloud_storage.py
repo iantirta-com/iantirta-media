@@ -34,7 +34,7 @@ def test_make_chunk_file(storage: StorageMixin, tmp_path: Path):
     assert chunk_data['count'] == len(chunk_data['files']) == expected_chunks
     count = 0
     for file in chunk_data['files']:
-        file: Path
+        file: Path = Path(file)
         parts = file.parts
         assert len(parts) == 2
         count += 1
