@@ -125,8 +125,8 @@ class ColabWorker(GPUWorker):
 
         name = worker_name or uuid.uuid4().hex[:6]
 
-        accelerator = client.Accelerator.NONE # T4
-        variant = client.Variant.DEFAULT # GPU
+        accelerator = client.Accelerator.T4 # T4
+        variant = client.Variant.GPU # GPU
         shape = client.Shape.STANDARD
 
         try:
