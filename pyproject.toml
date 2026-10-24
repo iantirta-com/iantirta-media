@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "iantirta-media"
-version = "0.1.2a1"
+version = "0.1.2a2"
 
 authors = [
     { name = "Iantirta.com", email = "ian@iantirta.com" },
@@ -54,11 +54,16 @@ dependencies = [
 [project.optional-dependencies]
 video = ["yt-dlp"]
 lyrics = ["requests", "iantirta-text"]
+
 drive = ['google-auth', 'google-api-python-client', 'google-auth-oauthlib']
+hf = ['huggingface_hub']
 colab = ['google-colab-cli']
 kaggle = ['kaggle']
 
-all = ["iantirta-media[video, lyrics, drive, kaggle]"]
+storage = ['iantirta-media[hf, drive]']
+worker = ['iantirta-media[colab, kaggle]']
+
+all = ["iantirta-media[video, lyrics, storage, worker]"]
 
 docs = ["mkdocs-material"]
 test = ["pytest"]

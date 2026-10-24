@@ -2,42 +2,20 @@
 # See LICENSE file for full copyright and licensing details.
 #
 # Partial code of 'colab_cli' improve by iantirta.com
-#
-# Copyright 2026 Google LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+
 import base64
-import contextlib
 import datetime
 import json
 import logging
 import os
-import re
-import signal
-import time
 import urllib.error
 import uuid
-from collections.abc import Generator
-from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import IO, TYPE_CHECKING
+from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
-import filelock
-import nbformat
 from google.auth.transport import requests as google_requests
-from nbformat.v4 import new_output
 
 from iantirta.media.tools.google import GoogleApi
 from iantirta.media.worker.worker_mixin import GPUWorker
@@ -60,103 +38,6 @@ PUBLIC_SCOPES = [
     "https://www.googleapis.com/auth/colaboratory",
     "https://www.googleapis.com/auth/drive.file",
 ]
-
-
-TITLE_REGEX = re.compile(r"^\s*#\s*@title\s+(.*)", re.MULTILINE)
-
-
-def _is_scope_error(e: Exception) -> bool:
-    """True if a ColabRequestError's response body indicates a missing OAuth scope.
-
-    The frontend returns a `google.rpc.Status` with `code=7` (PERMISSION_DENIED)
-    and a `DebugInfo` payload mentioning `SCOPE_NOT_PERMITTED` /
-    "insufficient authentication scopes". Match on either substring so we
-    don't depend on the exact wording of one of them.
-    """
-    body = getattr(e, "response_body", None) or ""
-    body_str = str(body)
-    return (
-        "SCOPE_NOT_PERMITTED" in body_str
-        or "insufficient authentication scopes" in body_str
-    )
-
-
-def _scope_remediation_message() -> str:
-    """User-facing remediation hint, tailored per auth provider.
-
-    Keep-alive is a Tunnel Frontend ping against the Colab session backend
-    (colab.research.google.com), authenticated with the user's own Gaia bearer
-    token — the same credential and host used to assign the VM. A missing-scope
-    error here is rare (assignment would normally have failed first), but if it
-    happens the fix is to re-authenticate with the standard Colab scopes.
-    """
-    common = (
-        "Keeping the session alive requires valid Colab credentials for "
-        "colab.research.google.com."
-    )
-
-    # OAuth2 (and any future provider) fallback.
-    return (
-        f"{common}\n"
-        "Delete the cached token at ~/.config/colab-cli/token.json and "
-        "re-run `colab new` to trigger a fresh consent flow."
-    )
-
-
-def save_output(outputs, cell):
-    if cell is None:
-        return
-
-    if not hasattr(cell, "outputs"):
-        cell.outputs = []
-    else:
-        cell.outputs.clear()
-
-    for out in outputs:
-        if out.get("output_type") == "stream":
-            cell.outputs.append(
-                new_output(
-                    output_type="stream",
-                    name=out.get("name", "stdout"),
-                    text=out.get("text", ""),
-                )
-            )
-        elif "data" in out:
-            output_type = out.get("output_type", "display_data")
-            cell.outputs.append(
-                new_output(
-                    output_type=output_type,
-                    data=out["data"],
-                    metadata=out.get("metadata", {}),
-                )
-            )
-        elif out.get("output_type") == "error":
-            cell.outputs.append(
-                new_output(
-                    output_type="error",
-                    ename=out.get("ename", "Error"),
-                    evalue=out.get("evalue", ""),
-                    traceback=out.get("traceback", []),
-                )
-            )
-
-
-def kill_process(pid: int):
-    """Safely terminates a process by PID."""
-    if not pid:
-        return
-    try:
-        os.kill(pid, signal.SIGTERM)
-        # Give it a moment to exit
-        for _ in range(5):
-            time.sleep(0.1)
-            os.kill(pid, 0)
-    except OSError:
-        # Already dead
-        pass
-    except Exception:
-        logging.debug(f"Failed to kill process {pid}")
-
 
 
 BOOTSTRAP_SCRIPT = """
@@ -183,8 +64,6 @@ print("JOB_LAUNCHED_SUCCESSFULLY")
 class ColabWorker(GPUWorker):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-
-        self.name = 'colab_worker'
 
         creds = GoogleApi.creds_from_user_token(
             user_token=self.access_token
