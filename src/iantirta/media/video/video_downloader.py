@@ -74,7 +74,8 @@ class VideoMetadata:
                 for can in candidate_keys:
                     if (artist_can := getattr(self, can, None)) is not None:
                         if isinstance(artist_can, list):
-                            candidates.extend([_artist_can.lower() for _artist_can in artist_can])
+                            for _artist_can in artist_can:
+                                candidates.add(_artist_can.lower())
                         else:
                             candidates.add(artist_can.lower())
 
