@@ -93,7 +93,17 @@ class StorageMixin:
             count += 1
 
             chunk_name = self._encode_name(f"{file_name}_({count:03d})")
-            chunk_file_path = dest_dir / chunk_name
+            
+            # Sharding method:
+            # Since each of git/hf folder can only hold upto 10K files or folder
+            # We uses a sharding where we uses 2 prefix of chunk_name as a subfolder.
+            # That would leaves us with a 16 x 16 = 256 possible folder, and it could then
+            # hold for about 2.56m files inside 1 single artist folder.
+            shard_prefix = chunk_name[:2]
+            shard_dir = dest_dir / shard_prefix
+            shard_dir.mkdir(parents=True, exist_ok=True)
+
+            chunk_file_path = shard_dir / chunk_name
             chunk_file_path.write_bytes(chunk_bytes)
 
             files.append(
