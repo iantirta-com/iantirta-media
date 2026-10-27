@@ -361,17 +361,17 @@ if __name__ == "__main__":
 #     # pprint(colab.new('test_worker'))
 #     # pprint(colab.colab_session.resolve_session(None))
 #     # pprint(colab.colab_session.store.get('test_worker'))
-    s = colab.new()
+    # s = colab.new()
     # pprint(s)
-#     # pprint(colab.run((Path(__file__).parent / 'worker_mixin.py').as_posix()))
-    code = """
-!ls
-!cat job.log
-!cat job.py
-!pgrep -f "python /content/job.py"
-# !pgrep -f /content/job.py
-"""
-    pprint(colab.exec_code(s, code))
+    pprint(colab.run((Path(__file__).parent / 'worker_mixin.py').as_posix()))
+#     code = """
+# !ls
+# !cat job.log
+# !cat job.py
+# !pgrep -f "python /content/job.py"
+# # !pgrep -f /content/job.py
+# """
+#     pprint(colab.exec_code(s, code))
     # pprint(colab.close(s))
 #     # pprint(colab.exec(s, (Path(__file__).parent / 'worker_mixin.py').as_posix()))
 #     # colab.run(__file__)
