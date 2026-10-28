@@ -347,7 +347,6 @@ class ColabWorker(GPUWorker):
         return s
 
     def new_gpu_session(self, name: str | None = None):
-        from colab_cli import client
         return self.new_session(
             name,
             accelerator = client.Accelerator.T4, # T4
@@ -355,11 +354,13 @@ class ColabWorker(GPUWorker):
             shape = client.Shape.STANDARD,
          )
 
-    def get_or_create_sessions(self, name: str | None = None):
+    def get_or_create_sessions(self, name: str | None = None, *, gpu: bool = False):
         if not name:
             sess = self.get_sessions()
             if len(sess) > 1:
-                raise OSError("Multiple active sessions found. Specify one with name")
+                raise OSError(
+                    "Multiple active sessions found. Specify one with name"
+                )
             elif sess:
                 name = sess[0]
             else:
@@ -369,7 +370,10 @@ class ColabWorker(GPUWorker):
             s = self.get_session(name)
         except Exception:
             _logger.error("Failed to get sessions, creating a new one.")
-            s = None
+            if gpu:
+                s = self.new_gpu_session(name)
+            else:
+                s = self.new_session(name)
         return s
 
     def close_session(self, name: str | None = None):
@@ -380,29 +384,18 @@ class ColabWorker(GPUWorker):
 
         _logger.info(f"[colab] Stopping session '{name}'...")
         try:
-            # The script may have outlived the proxy token.
-            fresh = self.state.get_session(name, ignore_missing_session=True)
-            if fresh:
-                rt = runtime.ColabRuntime(fresh.url, fresh.token, kernel_id=fresh.kernel_id)
-                rt.stop(shutdown_kernel=True)
-        except Exception:  # noqa: BLE001, S110
+            rt = runtime.ColabRuntime(s.url, s.token, kernel_id=s.kernel_id)
+            rt.stop(shutdown_kernel=True)
+        except Exception:
             pass
 
-        try:
-            self.state.client.unassign(s.endpoint)
-        except Exception:  # noqa: BLE001, S110
-            pass
+        self.state.client.unassign(s.endpoint)
+        self.state.store.remove(name)
+        self.state.history.log_event(
+            name, "session_terminated",
+            {"reason": "close"}
+        )
 
-        try:
-            self.state.store.remove(name)
-        except Exception:  # noqa: BLE001, S110
-            pass
-
-        try:
-            self.state.history.log_event(name, "session_terminated", {"reason": 'close'})
-        except Exception:  # noqa: BLE001, S110
-            pass
-        
         _logger.info("[colab] Session terminated.")
 
 
