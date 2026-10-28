@@ -25,6 +25,6 @@ class GPUWorker:
 if __name__ == "__main__":
     import time
     # time.sleep(30)
-    for i in range(100):
+    for i in range(10):
         print(i, "Hello World")
         time.sleep(2)
