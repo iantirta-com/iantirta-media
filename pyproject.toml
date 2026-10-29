@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "iantirta-media"
-version = "0.1.3a1"
+version = "0.1.3a2"
 
 authors = [
     { name = "Iantirta.com", email = "ian@iantirta.com" },
@@ -68,6 +68,9 @@ all = ["iantirta-media[video, lyrics, storage, worker]"]
 docs = ["mkdocs-material"]
 test = ["pytest"]
 dev = ["iantirta-media[test, all]"]
+
+[project.scripts]
+icolab = "iantirta.media.worker.colab_utils.cli.main:main"
 
 
 [project.urls]

@@ -38,6 +38,26 @@ class GoogleApi:
     _cached_flow: ClassVar[dict[str, 'InstalledAppFlow']] = {}
 
     @staticmethod
+    def run_interactive_prompt(
+        *,
+        client_config: str | Path | dict,
+        scopes: list[str],
+        **kwargs,
+    ):
+        auth_url, _ = GoogleApi.get_auth_url(
+            key='auto',
+            client_config=client_config,
+            scopes=scopes,
+            **kwargs
+        )
+        print('visit: ->', auth_url)
+        code=input('Paste auth code:')
+        return GoogleApi.creds_from_flow_token(
+            key='auto',
+            code=code
+        )
+
+    @staticmethod
     def get_auth_url(
         *,
         key: str,
