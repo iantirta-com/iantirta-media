@@ -1,6 +1,9 @@
 import argparse
 import sys
 from inspect import cleandoc
+from ..state import state
+from ..client import Shape
+
 
 class Colab:
     name = None
@@ -19,19 +22,32 @@ class Colab:
         subs = parser.add_subparsers()
 
         # Sessions
-        sessions = subs.add_parser(
+        session = subs.add_parser(
             'session',
             help='Colab Sessions Management'
         )
-        sessions.set_defaults(func=lambda _: exit(sessions.format_help()))
-        sess_subs = sessions.add_subparsers()
+        session.set_defaults(func=lambda _: sys.exit(session.format_help()))
+        sess_subs = session.add_subparsers()
 
         new = sess_subs.add_parser(
             'new',
             help='Create new session'
         )
+        new.set_defaults(func=self.new_session)
+        self.new_session.__func__.__parser = new
         new.add_argument(
-            '-s',
+            '-s', dest='name',
+            help='Session name'
+        )
+
+        stop = sess_subs.add_parser(
+            'stop',
+            help='Stop a session'
+        )
+        stop.set_defaults(func=self.stop_session)
+        self.stop_session.__func__.__parser = stop
+        stop.add_argument(
+            '-s', dest='name',
             help='Session name'
         )
 
@@ -39,6 +55,7 @@ class Colab:
             'list',
             help='List all sessions'
         )
+        list.set_defaults(func=self.list_sessions)
 
     @property
     def prog(self):
@@ -59,6 +76,36 @@ class Colab:
 
     def sessions(self, args):
         print('Sessions', args)
+
+    def new_session(self, args):
+        if not args.name:
+            sys.exit(f"{self.new_session.__parser.format_help()}\n\nSpecify a name for session.")
+
+        s = state.new_session(args.name)
+        print(f"Session [{s.name}] ready.")
+
+    def stop_session(self, args):
+        if not args.name:
+            sys.exit(f"{self.stop_session.__parser.format_help()}\n\nSpecify a name to stop a session.")
+
+        state.stop_session(args.name, reason='user_requested')
+        print(f"Session [{args.name}] terminated")
+
+    def list_sessions(self, args):
+        sessions = state.get_sessions()
+        if not sessions:
+            sys.exit('No active sessions is found.')
+        
+        for s in sessions.values():
+            parts = [
+                f"[{s.name}] {s.endpoint}",
+                f"Hardware: {'CPU' if s.accelerator == 'NONE' else s.accelerator}",
+                f"Shape: {'High-RAM' if s.machine_shape in (Shape.HIGH_RAM, 'HIGH_RAM', 1) else 'Standard'}",
+                f"Variant: {s.variant}",
+            ]
+            # if status is not None:
+            #     parts.append(f"Status: {status}")
+            print(" | ".join(parts))
 
     def run(self, cmdargs: list):
         args = self.parser.parse_args(cmdargs)

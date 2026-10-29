@@ -1,3 +1,4 @@
+import hashlib
 import os
 import urllib.error
 import json
@@ -53,6 +54,7 @@ def get_authorized_sessions(
     return google_requests.AuthorizedSession(creds)
 
 
+_cached_user_info = {}
 def get_user_info(
     *,
     token: str | None = None,
@@ -65,6 +67,9 @@ def get_user_info(
             token = creds.token
         else:
             raise ValueError('Either token or creds is needed to get user info')
+
+    if data := _cached_user_info.get(token):
+        return data
 
     qs = urlencode({"access_token": token})
     url = f"https://oauth2.googleapis.com/tokeninfo?{qs}"
@@ -101,8 +106,26 @@ def get_user_info(
         'Expires': expires_str,
         'Scopes': scopes or '<none>'
     }
+    _cached_user_info[token] = data
     return data
 
+_cached_account_id = {}
+def get_account_id(token: str):
+    if account_id := _cached_account_id.get(token):
+        return account_id
+
+    email = get_user_info(token=token)["Email"]
+    if not email or "@" not in email:
+        raise ValueError(
+            "Unable to identify the Google account. "
+            "Ensure the credentials include userinfo.email scope."
+        )
+
+    account_id = hashlib.sha256(
+        email.strip().casefold().encode("utf-8")
+    ).hexdigest()
+    _cached_account_id[token] = account_id
+    return account_id
 
 if __name__ == '__main__':
     from pprint import pprint

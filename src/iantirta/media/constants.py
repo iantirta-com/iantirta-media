@@ -1,4 +1,5 @@
 
+from datetime import timedelta
 from pathlib import Path
 
 # Default Home
@@ -19,6 +20,9 @@ DEFAULT_COLAB_STATE_CONFIG_PATH = DEFAULT_WORKER_PATH / 'colab-sessions.json'
 DEFAULT_COLAB_HISTORY_LOG_DIR = DEFAULT_WORKER_PATH / 'colab-history'
 
 DEFAULT_COLAB_USER_TOKEN_ENV = 'IANTIRTA_COLAB_USER_TOKEN'
+
+# Headroom so a token doesn't expire mid-command.
+DEFAULT_COLAB_TOKEN_REFRESH_MARGIN = timedelta(minutes=5)
 
 # Standard Scopes for Colab and Drive (Public Auth)
 DEFAULT_COLAB_PUBLIC_SCOPES = [
