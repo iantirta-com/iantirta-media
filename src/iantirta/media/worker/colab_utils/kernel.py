@@ -19,6 +19,15 @@ import websocket
 from iantirta.media.worker.colab_utils.runtime import ColabRuntime
 from iantirta.media.worker.colab_utils.utils import is_terminal_error
 
+try:
+    import termios
+    import tty
+except ImportError:
+    # Windows has neither termios nor tty. connect_console() below degrades
+    # gracefully to line-buffered input when these are unavailable.
+    termios = None
+    tty = None
+
 if TYPE_CHECKING:
     from .state import SessionState, State
 
@@ -69,6 +78,16 @@ def display_output(out, output_image=None):
         stream.flush()
     else:
         print(out)
+
+
+def send_terminal_size(ws):
+    """Sends the current terminal size to the remote backend."""
+    try:
+        size = os.get_terminal_size()
+        payload = json.dumps({"cols": size.columns, "rows": size.lines})
+        ws.send(payload)
+    except Exception as e:
+        _logger.debug(f"Failed to send terminal size: {e}")
 
 
 class Kernel:
@@ -161,15 +180,32 @@ class Kernel:
         on_close_hook=None,
     ):
         is_console_running = False
+        _last_error = None
 
         def connect_console():
             parsed = urlparse(s.url)
             ws_scheme = "wss" if parsed.scheme == "https" else "ws"
             ws_url = f"{ws_scheme}://{parsed.netloc}/colab/tty?colab-runtime-proxy-token={s.token}"
 
+            is_tty = sys.stdin.isatty()
+            fd = None
+            old_settings = None
+            can_raw = termios is not None and tty is not None and is_tty
+            if can_raw:
+                try:
+                    fd = sys.stdin.fileno()
+                    old_settings = termios.tcgetattr(fd)
+                except Exception:
+                    fd = None
+                    old_settings = None
+                    can_raw = False
             
             def on_open(ws):
                 _logger.info(f"[colab] WebSocket connected to {s.name}. Resuming log stream...")
+                
+                # Send initial terminal size
+                send_terminal_size(ws)
+                
                 if not run_in_background:
                     nonlocal is_console_running
                     is_console_running = True
@@ -250,6 +286,8 @@ class Kernel:
                         ws.close()
 
             def on_error(ws, error):
+                nonlocal _last_error
+                _last_error = error
                 _logger.error(f"[colab] WebSocket error: {error}")
 
             def on_close(ws, close_status_code, close_msg):
@@ -265,9 +303,43 @@ class Kernel:
                 on_error=on_error,
                 on_close=on_close,
             )
+
+            if not run_in_background:
+                import signal
+                def handle_sigwinch(signum, frame):
+                    """Handle window resize events."""
+                    if is_console_running:
+                        send_terminal_size(ws)
+
+                sigwinch = getattr(signal, "SIGWINCH", None)
+
             try:
+                if not run_in_background and can_raw:
+                    tty.setraw(fd, termios.TCSANOW)
+                    if sigwinch is not None:
+                        signal.signal(sigwinch, handle_sigwinch)
+
                 ws.run_forever()
+
+                if _last_error:
+                    # Re-raise or wrap terminal errors
+                    err_msg = str(_last_error)
+                    if "404" in err_msg or "401" in err_msg:
+                        # We raise a standard exception that the caller can recognize
+                        raise RuntimeError(f"Connection failed: {err_msg}")
             finally:
+                if not run_in_background and can_raw:
+                    # Always ensure the terminal is restored to its original state
+                    try:
+                        termios.tcsetattr(fd, termios.TCSANOW, old_settings)
+                    except Exception:
+                        pass
+                    # Restore the default signal handler for resize
+                    if sigwinch is not None:
+                        try:
+                            signal.signal(sigwinch, signal.SIG_DFL)
+                        except Exception:
+                            pass
                 _logger.info(f"Connection of {s.name} closed.")
                 if on_close_hook:
                     on_close_hook()
