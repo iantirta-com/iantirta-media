@@ -1,6 +1,7 @@
 import argparse
 import sys
 from inspect import cleandoc
+from dataclasses import asdict
 from ..state import state
 from ..client import Shape
 
@@ -39,6 +40,10 @@ class Colab:
             '-s', dest='name',
             help='Session name'
         )
+        new.add_argument(
+            '--gpu',
+            help='Accelerator to use'
+        )
 
         stop = sess_subs.add_parser(
             'stop',
@@ -56,6 +61,13 @@ class Colab:
             help='List all sessions'
         )
         list.set_defaults(func=self.list_sessions)
+
+        # Others
+        quota = subs.add_parser(
+            'quota',
+            help='Show usage quota'
+        )
+        quota.set_defaults(func=self.get_quota)
 
     @property
     def prog(self):
@@ -81,7 +93,7 @@ class Colab:
         if not args.name:
             sys.exit(f"{self.new_session.__parser.format_help()}\n\nSpecify a name for session.")
 
-        s = state.new_session(args.name)
+        s = state.new_session(args.name, gpu=args.gpu)
         print(f"Session [{s.name}] ready.")
 
     def stop_session(self, args):
@@ -106,6 +118,11 @@ class Colab:
             # if status is not None:
             #     parts.append(f"Status: {status}")
             print(" | ".join(parts))
+
+    def get_quota(self, args):
+        data = asdict(state.client.get_consumption_user_info())
+        for k, v in data.items():
+            print(k, ':', v)
 
     def run(self, cmdargs: list):
         args = self.parser.parse_args(cmdargs)
