@@ -15,13 +15,14 @@ from google.auth.transport import requests as google_requests
 
 def get_credentials(user_token = None, show_login: bool = False):
     if not user_token:
-        # Check path first, then env,
+        # Check env first, then path,
         # if not prompt auth if needed.
-        if (user_token := constants.DEFAULT_COLAB_USER_TOKEN_PATH).exists():
-            pass
-        elif (user_token := os.environ.get(
+        if (user_token := os.environ.get(
             constants.DEFAULT_COLAB_USER_TOKEN_ENV
         )) is not None:
+            pass
+
+        elif (user_token := constants.DEFAULT_COLAB_USER_TOKEN_PATH).exists():
             pass
 
     if not user_token and not show_login:

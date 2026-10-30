@@ -30,6 +30,7 @@ from iantirta.media.worker.colab_utils.client import (
 from iantirta.media.worker.colab_utils.kernel import Kernel
 from iantirta.media.worker.colab_utils.runtime import ColabRuntime
 from iantirta.media.worker.colab_utils.utils import get_status_code
+from iantirta.media.worker.colab_utils.contents import ContentsClient
 
 _logger = logging.getLogger(__name__)
 
@@ -215,6 +216,7 @@ class State:
     _history = None
     _client = None
     _kernel = None
+    _contents = None
     _auth_session = None
 
     def __init__(self, auth_session=None):
@@ -237,6 +239,12 @@ class State:
         if self._history is None:
             self._history = HistoryLogger()
         return self._history
+
+    @property
+    def contents(self):
+        if self._contents is None:
+            self._contents = ContentsClient()
+        return self._contents
 
     @property
     def creds(self):
@@ -311,12 +319,7 @@ class State:
             if s.endpoint not in by_endpoint and s.account_id == account_id:
                 self.prune_session(name)
                 pruned += 1
-            elif s.account_id == account_id:
-                # Since we already update it earlier
-                pass
-            else:
-                raise OSError("There is no way the account id could be different.")
-
+            
         if pruned > 0:
             _logger.info(f"[colab] Pruned {pruned} stale local session(s).")
 
