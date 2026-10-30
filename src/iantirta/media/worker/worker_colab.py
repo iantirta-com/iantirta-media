@@ -5,7 +5,10 @@
 import logging
 import os
 import re
+import threading
 from dataclasses import asdict
+
+from typing_extensions import Self
 
 from iantirta.media.worker.colab_utils.auth import (
     get_authorized_sessions,
@@ -88,8 +91,9 @@ class ColabWorker(GPUWorker):
         folder: str,
         *,
         run_in_background: bool = True,
-        gpu: bool = False
-    ):
+        gpu: bool = False,
+        on_close_hook=None,
+    ) -> threading.Thread | None:
         # Folder is file in colab worker
         file = folder
         if not os.path.isfile(file):
@@ -98,7 +102,7 @@ class ColabWorker(GPUWorker):
         kwargs = {'gpu': 't4',} if gpu else {}
         s = self.state.resolve_session(self.name, **kwargs)
 
-        return self.state.kernel.run(file, s=s, run_in_background=run_in_background)
+        return self.state.kernel.run(file, s=s, run_in_background=run_in_background, on_close_hook=on_close_hook)
 
     def get_quota(self):
         return asdict(self.state.client.get_consumption_user_info())

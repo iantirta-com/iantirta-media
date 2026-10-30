@@ -359,6 +359,7 @@ class Kernel:
         s: SessionState | None = None,
         name: str | None = None,
         run_in_background: bool = False,
+        on_close_hook=None,
         **kwargs,
     ):
         """Run python script. create session if not exists"""
@@ -372,6 +373,11 @@ class Kernel:
         raw_code = Path(script_path).read_text(encoding='utf-8')
 
         def on_close():
+            if on_close_hook:
+                try:
+                    on_close_hook()
+                except Exception as e:
+                    _logger.error(f"Error on close hook: {e}")
             self.state.stop_session(s.name)
         
         if run_in_background:
@@ -391,10 +397,16 @@ if __name__ == '__main__':
 
     from iantirta.media.worker.colab_utils.state import state
     kernel = Kernel(state)
+
+    def on_close():
+        quota = state.client.get_consumption_user_info()
+        print("This is after closing, quota is", quota)
+    
     t = kernel.run(
         (Path(__file__).parent.parent / 'worker_mixin.py').as_posix(),
         name='test_colab',
-        run_in_background=True
+        run_in_background=True,
+        on_close_hook=on_close,
     )
     if t:
         _logger.info("Main script is waiting for the background job to finish...")

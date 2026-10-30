@@ -252,7 +252,7 @@ class Colab:
             "file_operation",
             {"op": "cat", "remote": args.remote_path},
         )
-        sys.stdout.write(content.decode("utf-8"))
+        sys.stdout.write(content.decode('utf-8'))
 
     def tail(self, args):
         if args.lines < 0:
