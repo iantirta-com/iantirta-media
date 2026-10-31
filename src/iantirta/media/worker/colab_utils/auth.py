@@ -23,7 +23,7 @@ def get_credentials(user_token = None, show_login: bool = False):
             pass
 
         elif (user_token := constants.DEFAULT_COLAB_USER_TOKEN_PATH).exists():
-            pass
+            user_token = user_token.as_posix()
 
     if not user_token and not show_login:
         raise ValueError(

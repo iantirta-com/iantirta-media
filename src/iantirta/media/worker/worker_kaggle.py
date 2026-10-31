@@ -1,5 +1,6 @@
 
 import os
+from datetime import timezone
 
 from .worker_mixin import GPUWorker
 
@@ -19,11 +20,17 @@ class KaggleWorker(GPUWorker):
 
     def get_quota(self) -> dict:
         quotas = self._api.quota_view()
+
+        refresh_time = quotas.quota_refresh_time
+        if refresh_time is not None and refresh_time.utcoffset() is None:
+            # The SDK returns UTC timestamps without timezone information.
+            refresh_time = refresh_time.replace(tzinfo=timezone.utc)
+        
         quotas_per_type = [
             {
                 "gpu": {
-                    "time_used": quotas.gpu_quota.time_used,
-                    "time_allowed": quotas.gpu_quota.total_time_allowed
+                    "time_used": quotas.gpu_quota.time_used, # timedelta
+                    "time_allowed": quotas.gpu_quota.total_time_allowed # timedelta
                 }
             },
             {
@@ -34,7 +41,7 @@ class KaggleWorker(GPUWorker):
             }
         ]
         return {
-            "refresh_time": quotas.quota_refresh_time,
+            "refresh_time": refresh_time, # Datetime
             "types": quotas_per_type
         }
 
@@ -77,3 +84,7 @@ class KaggleWorker(GPUWorker):
             return result
         else:
             raise RuntimeError(f"Kaggle push error: {result.error}")
+
+
+if __name__ == '__main__':
+    pass
