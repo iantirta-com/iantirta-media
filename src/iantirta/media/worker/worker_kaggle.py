@@ -1,8 +1,8 @@
 
 import os
-from datetime import timezone
+from datetime import timezone, timedelta
 
-from .worker_mixin import GPUWorker
+from iantirta.media.worker.worker_mixin import GPUWorker
 
 __all__ = [
     "KaggleWorker"
@@ -45,7 +45,7 @@ class KaggleWorker(GPUWorker):
             "types": quotas_per_type
         }
 
-    def run(self, folder: str):
+    def run(self, folder: str, **kwargs):
         """ Run kaggle kernel instance and push the notebook.
         
             :param str folder: the folder path containing
@@ -87,4 +87,6 @@ class KaggleWorker(GPUWorker):
 
 
 if __name__ == '__main__':
-    pass
+    api = KaggleWorker(access_token=os.environ['KAGGLE_API_TOKEN'])
+    from pprint import pprint
+    pprint(api.get_quota())

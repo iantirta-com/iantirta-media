@@ -219,8 +219,9 @@ class State:
     _contents = None
     _auth_session = None
 
-    def __init__(self, auth_session=None):
+    def __init__(self, auth_session=None, creds=None):
         self._auth_session = auth_session
+        self._creds = creds
 
     @property
     def kernel(self):

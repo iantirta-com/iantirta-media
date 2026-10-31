@@ -2,9 +2,16 @@
 
 import uuid
 from abc import abstractmethod
+from typing import Any
 
 
 class GPUWorker:
+    """
+    Base class mixin for GPU Worker
+
+    :param str access_token:
+    :param str | None name:
+    """
 
     def __init__(self, *, access_token: str,  name: str | None = None):
         self.access_token = access_token
@@ -14,17 +21,23 @@ class GPUWorker:
         self.name = name
 
     @abstractmethod
-    def get_quota(self) -> dict:
+    def get_quota(self) -> dict[str, Any]:
+        """
+        Fetch quota or usage for the worker.
+
+        Provider method should override this.
+
+        :rtype: dict[str, Any]
+        """
         raise NotImplementedError()
 
     @abstractmethod
-    def run(self, folder: str):
+    def run(self, path_or_dir: str, **kwargs):
+        """
+        Run worker given any path / dir path.
+
+        Provider method should override this.
+
+        :param str path_or_dir:
+        """
         raise NotImplementedError()
-
-
-if __name__ == "__main__":
-    import time
-    # time.sleep(30)
-    for i in range(10):
-        print(i, "Hello World")
-        time.sleep(2)
