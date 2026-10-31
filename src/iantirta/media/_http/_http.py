@@ -149,13 +149,20 @@ class HTTPStatusCode(IntEnum):
 
 
 class BaseHTTP:
+    """
+    Base HTTP Request class
+    support backoff retries.
+
+    :param Optional[str] endpoint:
+    :param Optional[logging.Logger] logger:
+    """
     endpoint: str
 
     def __init__(
-            self,
-            endpoint: str | None = None,
-            logger: logging.Logger | None = None
-        ):
+        self,
+        endpoint: str | None = None,
+        logger: logging.Logger | None = None
+    ):
         if endpoint is not None:
             self.endpoint = endpoint
 

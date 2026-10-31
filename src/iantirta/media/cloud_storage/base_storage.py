@@ -7,10 +7,16 @@ from pathlib import Path
 
 from iantirta.media import constants
 
-_logger = logging.getLogger(__name__)
-
 
 class StorageMixin:
+    """
+    Base class for storage api.
+
+    :param str access_token:
+    :param Optional[str | Path] staging_dir:
+        if not set, will use ``DEFAULT_IANTIRTA_HOME / 'karaoke_staging'``
+    :param Optional[logging.Logger] logger:
+    """
 
     def __init__(
         self,
@@ -21,31 +27,38 @@ class StorageMixin:
     ):
         self.access_token = access_token
 
-        self.logger = logger or _logger
+        self.logger = logger or logging.getLogger(__name__)
 
         if not staging_dir:
             staging_dir = constants.DEFAULT_UPLOAD_STAGING_DIR
         self.staging_dir = Path(staging_dir)
 
+    @abstractmethod
     @property
     def download_endpoint(self) -> str:
+        """
+        :return: a string uri endpoint that should hold the download url domain endpoint
+        :rtype: str
+        """
         return ''
 
     @abstractmethod
     def test_connection(self):
-        raise NotImplementedError()
-
-    @abstractmethod
-    def upload_file(
-        self,
-        *
-        src_path: str | Path,
-        target_path: str | Path,
-        logger: logging.Logger | None = None
-    ) -> list[str]:
+        """
+        Test connection for the storage api
+        inheritor should override this.
+        """
         raise NotImplementedError()
 
     def _encode_name(self, name: str) -> str:
+        """
+        Encode any given str into 64 bytes string representation of it.
+        with secrets.
+
+        :param str name:
+        :return: encoded string representing given name
+        :rtype: str
+        """
         return hmac.new(
             b'karaoke_file',
             repr(name).encode(),
@@ -57,20 +70,32 @@ class StorageMixin:
         *,
         src_path: str | Path,
         target_path: str,
+        chunk_size: int = constants.MAX_BYTES_PER_FILE,
     ) -> dict:
-        """Will break any given file into separated chunk.
+        """
+        Will make chunk any given file
+        in a ``chunk_size`` limit.
 
-        Example:
+        Example :
             src: path/filename.txt
             target_path: target/path/
             will convert to: encoded_target_path/encoded_filename
+
+        :param str | Path src_path:
+            source path, will use .name for the chunk name.
+        :param target_path str:
+            subfolder for the storage api to stored the source path within.
+
+        :return: dict metadata represanting the chunk file.
+        :rtype: dict[str, Any]
+        
         """
         if Path(target_path).suffix:
             raise ValueError('Currently not supported uploading directly to a named path, define subfolder instead.')
 
-        # we encode target_path
-        # as it will also be the same file being replaced
-        # if it is the same target_path
+        if not chunk_size:
+            chunk_size = constants.MAX_BYTES_PER_FILE
+
         target_path = self._encode_name(target_path.strip('/'))
         dest_dir = self.staging_dir / target_path
         dest_dir.mkdir(parents=True, exist_ok=True)
@@ -83,13 +108,13 @@ class StorageMixin:
 
         # This will consist
         # encoded_target_path/encoded_chunk_name
-        files = []
+        files: list[str] = []
 
         while file_bytes:
             # get the chunk bytes from file
-            chunk_bytes = file_bytes[:constants.MAX_BYTES_PER_FILE]
+            chunk_bytes = file_bytes[:chunk_size]
             # reduce the original file bytes
-            file_bytes = file_bytes[constants.MAX_BYTES_PER_FILE:]
+            file_bytes = file_bytes[chunk_size:]
             count += 1
 
             chunk_name = self._encode_name(f"{file_name}_({count:03d})")

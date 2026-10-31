@@ -12,6 +12,7 @@ __version__ = version("iantirta-media")
 
 if TYPE_CHECKING:
     from ._http import *
+    from .api import *
     from .cloud_storage import *
     from .progress_bar import *
     from .song_lyrics import *

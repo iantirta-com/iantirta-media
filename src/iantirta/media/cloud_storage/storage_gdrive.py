@@ -1,55 +1,32 @@
-import ast
-import json
+from abc import abstractmethod
 import logging
 import os
 from contextlib import ExitStack
 from pathlib import Path
-from typing import ClassVar
-import warnings
 
-from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-from iantirta.media import get_context_progressbar
+from iantirta.media import constants, get_context_progressbar
 
-from .base_storage import StorageMixin
 from ..tools.google import GoogleApi
+from .base_storage import StorageMixin
 
 __all__ = [
     'DriveStorage'
 ]
 
 
-ENV_DRIVE_USER_TOKEN = 'IANTIRTA_DRIVE_USER_TOKEN'
-ENV_IANTIRTA_DRIVE_ROOT_FOLDER_ID = 'IANTIRTA_DRIVE_ROOT_FOLDER_ID'
-SCOPES = ['https://www.googleapis.com/auth/drive']
-
-
-def _normalize_to_dict(variable: str | Path | dict) -> dict:
-    def _parse(var: str):
-        try:
-            return json.loads(var)
-        except json.decoder.JSONDecodeError:
-            return ast.literal_eval(var)
-    
-    if isinstance(variable, (str, Path)):
-        # Normalize first
-        try:
-            if Path(variable).is_file():
-                variable = Path(variable).read_text('utf-8')
-        except Exception:
-            pass
-
-        variable = _parse(variable)
-
-    return variable
-
-
 class DriveStorage(StorageMixin):
-    _cached_flow: ClassVar[dict[str, InstalledAppFlow]] = {}
+    """
+    Google Drive storage api.
+
+    :param Optional[str] root_folder_id:
+        used for a base directory for storage task.
+    """
+    _creds: Credentials | None = None
+    _service = None
 
     def __init__(
         self,
@@ -57,19 +34,34 @@ class DriveStorage(StorageMixin):
         root_folder_id: str | None = None,
         **kwargs,
     ):
-        access_token = kwargs.pop('access_token', None)
-        if not access_token:
-            access_token = os.environ[ENV_DRIVE_USER_TOKEN]
+        # Default user token on env.
+        if not (access_token := kwargs.pop('access_token', None)):
+            access_token = os.getenv(constants.DEFAULT_DRIVE_USER_TOKEN_ENV)
         super().__init__(access_token=access_token, **kwargs)
 
-        self.creds = self.get_credentials(self.access_token)
-
         if not root_folder_id:
-            root_folder_id = os.environ[ENV_IANTIRTA_DRIVE_ROOT_FOLDER_ID]
+            root_folder_id = os.getenv(constants.DEFAULT_DRIVE_ROOT_FOLDER_ID_ENV)
         self.root_folder_id = root_folder_id
 
-        self.service = build('drive', 'v3', credentials=self.creds)
+    # -----------------------
+    # Specific provider properties
+    # -----------------------
 
+    @property
+    def creds(self):
+        if not self._creds:
+            self._creds = GoogleApi.creds_from_user_token(user_token=self.access_token)
+        return self._creds
+
+    @property
+    def service(self):
+        if not self._service:
+            self._service = build('drive', 'v3', credentials=self.creds)
+        return self._service
+
+    # Override
+
+    @abstractmethod
     @property
     def download_endpoint(self) -> str:
         return ''
@@ -82,194 +74,162 @@ class DriveStorage(StorageMixin):
         ).execute()
         return True
 
-    # Auth Method
-    @staticmethod
-    def get_credentials(user_token: Path | str | dict | None = None) -> Credentials:
-        warnings.warn("Deprecated method of setup user token, use `iantirta.media.tools.google.GoogleApi` instead", DeprecationWarning)
-        return GoogleApi.creds_from_user_token(user_token=user_token)
+    # # Authenticated Method
+    # def _get_folder(self, folder_name: str) -> str | None:
+    #     query = (
+    #         f"name='{folder_name}' "
+    #         "and mimeType='application/vnd.google-apps.folder' "
+    #         "and trashed=false "
+    #         f"and '{self.root_folder_id}' in parents"
+    #     )
 
-    @staticmethod
-    def get_credentials_from_flow(
-        *,
-        key: str,
-        **kwargs,
-    ) -> Credentials:
-        warnings.warn("Deprecated method of setup user token, use `iantirta.media.tools.google.GoogleApi` instead", DeprecationWarning)
-        return GoogleApi.creds_from_flow_token(key=key, **kwargs)
+    #     response = self.service.files().list(
+    #         q=query,
+    #         spaces='drive',
+    #         fields='files(id, name)',
+    #         supportsAllDrives=True,
+    #         includeItemsFromAllDrives=True
+    #     ).execute()
 
-    @staticmethod
-    def setup_user_token(
-        *,
-        client_config: str | Path | dict,
-        key: str,
-        redirect_uri='urn:ietf:wg:oauth:2.0:oob:auto',
-        **kwargs
-    ) -> str:
-        warnings.warn("Deprecated method of setup user token, use `iantirta.media.tools.google.GoogleApi` instead", DeprecationWarning)
-        return GoogleApi.get_auth_url(
-            key=key,
-            scopes=SCOPES,
-            client_config=client_config,
-            redirect_uri=redirect_uri,
-            **kwargs
-        )
+    #     if files := response.get('files', []):
+    #         return files[0]['id']
 
-    # Authenticated Method
-    def _get_folder(self, folder_name: str) -> str | None:
-        query = (
-            f"name='{folder_name}' "
-            "and mimeType='application/vnd.google-apps.folder' "
-            "and trashed=false "
-            f"and '{self.root_folder_id}' in parents"
-        )
+    #     return None
 
-        response = self.service.files().list(
-            q=query,
-            spaces='drive',
-            fields='files(id, name)',
-            supportsAllDrives=True,
-            includeItemsFromAllDrives=True
-        ).execute()
+    # def _create_folder(self, folder_name: str) -> str:
+    #     file_metadata = {
+    #         'name': folder_name,
+    #         'mimeType': 'application/vnd.google-apps.folder',
+    #         'parents': [self.root_folder_id]
+    #     }
 
-        if files := response.get('files', []):
-            return files[0]['id']
+    #     folder = self.service.files().create(
+    #         body=file_metadata,
+    #         fields='id',
+    #         supportsAllDrives=True
+    #     ).execute()
 
-        return None
+    #     return folder.get('id')
 
-    def _create_folder(self, folder_name: str) -> str:
-        file_metadata = {
-            'name': folder_name,
-            'mimeType': 'application/vnd.google-apps.folder',
-            'parents': [self.root_folder_id]
-        }
+    # def _get_or_create_folder(self, folder_name: str) -> str:
+    #     if folder_id := self._get_folder(folder_name):
+    #         return folder_id
+    #     return self._create_folder(folder_name)
 
-        folder = self.service.files().create(
-            body=file_metadata,
-            fields='id',
-            supportsAllDrives=True
-        ).execute()
+    # def upload_file(
+    #     self,
+    #     *,
+    #     src_path: str | Path,
+    #     target_path: str,
+    #     logger: logging.Logger | None = None,
+    #     replace: bool = True,
+    # ) -> list[str]:
+    #     if Path(target_path).suffix:
+    #         raise ValueError('Currently not supported uploading directly to a named path, define subfolder instead.')
 
-        return folder.get('id')
+    #     target_path = self._encode_name(target_path.strip('/'))
 
-    def _get_or_create_folder(self, folder_name: str) -> str:
-        if folder_id := self._get_folder(folder_name):
-            return folder_id
-        return self._create_folder(folder_name)
+    #     subfolder_id = self._get_or_create_folder(target_path)
 
-    def upload_file(
-        self,
-        *,
-        src_path: str | Path,
-        target_path: str,
-        logger: logging.Logger | None = None,
-        replace: bool = True,
-    ) -> list[str]:
-        if Path(target_path).suffix:
-            raise ValueError('Currently not supported uploading directly to a named path, define subfolder instead.')
+    #     media_body = MediaFileUpload(
+    #         str(src_path),
+    #         # mimetype='video/x-matroska', # MKV
+    #         resumable=True,
+    #         chunksize=5 * 1024 * 1024,
+    #     )
+    #     upload_params = {
+    #         'media_body': media_body,
+    #         'fields': 'id, webViewLink, webContentLink',
+    #         'supportsAllDrives': True,
+    #     }
 
-        target_path = self._encode_name(target_path.strip('/'))
+    #     if (
+    #         replace
+    #         and (file_id := self.search_file(
+    #                 Path(src_path).name,
+    #                 subfolder_id=subfolder_id
+    #             ))
+    #     ):
+    #         (logger or self.logger).debug(f'Found current file id: {file_id}')
+    #         request = self.service.files().update(
+    #             fileId=file_id,
+    #             **upload_params,
+    #         )
+    #     else:
+    #         (logger or self.logger).debug('Creating new file on drive.')
+    #         request = self.service.files().create(
+    #             body={
+    #                 'name': Path(src_path).name,
+    #                 'parents': [subfolder_id]
+    #             },
+    #             **upload_params
+    #         )
 
-        subfolder_id = self._get_or_create_folder(target_path)
+    #     with ExitStack() as stack:
+    #         displayed_filename = f"Upload progress {src_path.name}"
 
-        media_body = MediaFileUpload(
-            str(src_path),
-            # mimetype='video/x-matroska', # MKV
-            resumable=True,
-            chunksize=5 * 1024 * 1024,
-        )
-        upload_params = {
-            'media_body': media_body,
-            'fields': 'id, webViewLink, webContentLink',
-            'supportsAllDrives': True,
-        }
+    #         if len(displayed_filename) > 40:
+    #             displayed_filename = f"(...){displayed_filename[-40:]}"
 
-        if (
-            replace
-            and (file_id := self.search_file(
-                    Path(src_path).name,
-                    subfolder_id=subfolder_id
-                ))
-        ):
-            (logger or self.logger).debug(f'Found current file id: {file_id}')
-            request = self.service.files().update(
-                fileId=file_id,
-                **upload_params,
-            )
-        else:
-            (logger or self.logger).debug('Creating new file on drive.')
-            request = self.service.files().create(
-                body={
-                    'name': Path(src_path).name,
-                    'parents': [subfolder_id]
-                },
-                **upload_params
-            )
+    #         pbar_cm = get_context_progressbar(
+    #             desc=displayed_filename,
+    #             log_level=(logger or self.logger).getEffectiveLevel(),
+    #             total=media_body.size(),
+    #         )
+    #         pbar = stack.enter_context(pbar_cm)
+    #         response = None
+    #         uploaded = 0
+    #         while response is None:
+    #             status, response = request.next_chunk()
+    #             if status:
+    #                 pbar.update(status.resumable_progress - uploaded)
+    #                 uploaded = status.resumable_progress
+    #         pbar.update(media_body.size() - uploaded)
 
-        with ExitStack() as stack:
-            displayed_filename = f"Upload progress {src_path.name}"
+    #     file_id = response.get('id')
+    #     download_url = response.get('webContentLink')
 
-            if len(displayed_filename) > 40:
-                displayed_filename = f"(...){displayed_filename[-40:]}"
+    #     self.service.permissions().create(
+    #         fileId=file_id,
+    #         body={
+    #             'type': 'anyone',
+    #             'role': 'reader'
+    #         },
+    #         fields='id'
+    #     ).execute()
 
-            pbar_cm = get_context_progressbar(
-                desc=displayed_filename,
-                log_level=(logger or self.logger).getEffectiveLevel(),
-                total=media_body.size(),
-            )
-            pbar = stack.enter_context(pbar_cm)
-            response = None
-            uploaded = 0
-            while response is None:
-                status, response = request.next_chunk()
-                if status:
-                    pbar.update(status.resumable_progress - uploaded)
-                    uploaded = status.resumable_progress
-            pbar.update(media_body.size() - uploaded)
+    #     (logger or self.logger).info(
+    #         f"Successfully uploaded {src_path!s} to Drive. "
+    #         f"File ID: {file_id}"
+    #     )
 
-        file_id = response.get('id')
-        download_url = response.get('webContentLink')
+    #     return [download_url]
 
-        self.service.permissions().create(
-            fileId=file_id,
-            body={
-                'type': 'anyone',
-                'role': 'reader'
-            },
-            fields='id'
-        ).execute()
+    # def search_file(
+    #     self,
+    #     file_name: str,
+    #     *,
+    #     subfolder_id: str | None = None,
+    #     logger: logging.Logger | None = None,
+    # ) -> str | None:
+    #     if not subfolder_id:
+    #         subfolder_id = self.root_folder_id
 
-        (logger or self.logger).info(
-            f"Successfully uploaded {src_path!s} to Drive. "
-            f"File ID: {file_id}"
-        )
+    #     query = (
+    #         f'name="{file_name}" '
+    #         'and trashed=false '
+    #         f"and '{subfolder_id}' in parents"
+    #     )
 
-        return [download_url]
+    #     response = self.service.files().list(
+    #         q=query,
+    #         spaces='drive',
+    #         fields='files(id, name)',
+    #         supportsAllDrives=True,
+    #         includeItemsFromAllDrives=True
+    #     ).execute()
 
-    def search_file(
-        self,
-        file_name: str,
-        *,
-        subfolder_id: str | None = None,
-        logger: logging.Logger | None = None,
-    ) -> str | None:
-        if not subfolder_id:
-            subfolder_id = self.root_folder_id
+    #     if files := response.get('files', []):
+    #         return files[0]['id']
 
-        query = (
-            f'name="{file_name}" '
-            'and trashed=false '
-            f"and '{subfolder_id}' in parents"
-        )
-
-        response = self.service.files().list(
-            q=query,
-            spaces='drive',
-            fields='files(id, name)',
-            supportsAllDrives=True,
-            includeItemsFromAllDrives=True
-        ).execute()
-
-        if files := response.get('files', []):
-            return files[0]['id']
-
-        return None
+    #     return None

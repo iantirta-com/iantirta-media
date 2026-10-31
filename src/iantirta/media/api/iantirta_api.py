@@ -1,25 +1,33 @@
 import os
+
 import requests
+
 from iantirta.media import BaseHTTP
 
+__all__ = [
+    "IanTirtaAPI"
+]
+
 class IanTirtaAPI(BaseHTTP):
+    """
+    Wrapper class for api communication to iantirta.com
+
+    :param Optional[str] access_token:
+        User wide access_token.
+    :param Optional[str] db_name:
+    """
     endpoint: str = 'https://www.iantirta.com'
 
     def __init__(
         self,
-        api_url: str,
-        api_token: str,
-        *args,
+        access_token: str | None = None,
         db_name: str | None = None,
         **kwargs
     ):
-        super().__init__(*args, **kwargs)
-
-        if api_url is not None:
-            self.endpoint = api_url
+        super().__init__(**kwargs)
 
         self.db_name = db_name
-        self.api_token = api_token
+        self.access_token = access_token
 
     def build_headers(self):
         headers = {
@@ -69,8 +77,6 @@ class IanTirtaAPI(BaseHTTP):
             '/web/health'
         )
 
-    def model_bridge(self, model, method):
-        pass
         
 
 if __name__ == '__main__':
