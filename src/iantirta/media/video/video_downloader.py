@@ -201,7 +201,7 @@ class VideoDownloader:
 
 
 def download_one_video(url, *, logger=None, **kwargs) -> VideoMetadata:
-    return VideoDownloader().download(url)
+    return VideoDownloader().download(url, logger=logger, **kwargs)
 
 
 def extract_video_info(url, *, logger=None, **kwargs) -> VideoMetadata:
