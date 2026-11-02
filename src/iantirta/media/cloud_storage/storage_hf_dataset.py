@@ -24,6 +24,8 @@ class HFDatasetStorage(StorageMixin):
         required for location.
     """
 
+    _client = None
+
     def __init__(
         self,
         *,
