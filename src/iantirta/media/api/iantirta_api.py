@@ -1,12 +1,21 @@
 import os
 
 import requests
+from typing import Any
+import logging
 
 from iantirta.media import BaseHTTP
 
 __all__ = [
     "IanTirtaAPI"
 ]
+
+# Exception
+
+
+class IanTirtaAPIError(Exception):
+    """ Raised when iantirta api returns an error. """
+
 
 class IanTirtaAPI(BaseHTTP):
     """
@@ -29,27 +38,38 @@ class IanTirtaAPI(BaseHTTP):
         self.db_name = db_name
         self.access_token = access_token
 
-    def build_headers(self):
+    def build_headers(self) -> dict:
+        """
+        Build necessary headers for server calling.
+        """
         headers = {
             'Authorization': f'bearer {self.api_token}',
             "User-Agent": "IantirtaAPI " + requests.utils.default_user_agent(),
             "Content-Type": "application/json",
         }
+
         if self.db_name:
             headers['X-Sigil-Database'] = self.db_name
+
         return headers
 
-    def raise_for_status(self, res):
-        try:
-            res.raise_for_status()
-        except Exception:
-            raise
+    def raise_for_status(self, res: requests.Response):
+        """
+        Method wrapper for request raise for status.
+
+        Server error not necessarily a HTTPError.
+        it could also be received by ``error`` parameter.
+
+        :param Request res:
+        """
+        res.raise_for_status()
 
         res = res.json()
         if isinstance(res, dict) and (error := res.get("error")):
             error_data = error.get("data", {})
-            raise OSError(
-                f"\nIantirta API Error ({error.get('code')}) {error.get('message')}:\n"
+            raise IanTirtaAPIError(
+                f"\nIantirta API Error ({error.get('code')}) "
+                f"{error.get('message')}:\n"
                 f"ErrorType: {error_data.get('name')}\n"
                 f"Message: {error_data.get('message')}\n"
                 f"Traceback: {error_data.get('debug')}"
@@ -59,19 +79,38 @@ class IanTirtaAPI(BaseHTTP):
         self,
         method: str = 'GET',
         path: str = '',
-        params: dict | None = None,
-    ):
+        params: dict[str, Any] | None = None,
+    ) -> Any:
+        """
+        Make json requests to the server.
+
+        this will also raise status
+
+        :param str method:
+        :param str path:
+        :param Optional[dict[str, Any]] params:
+        :return: Any the server gives, can be dict, list, None, etc.
+        :raise IanTirtaAPIError: if server returns an error.
+        """
         headers = self.build_headers()
+
         res = self.request(
             method,
             path,
             json=params,
             headers=headers
         )
+
+        self.logger.debug(f'Sending payload to ({path})')
+
         self.raise_for_status(res)
+
         return res.json()
 
     def test_connection(self):
+        """
+        Make api call to test connection.
+        """
         return self.make_json_request(
             'get',
             '/web/health'

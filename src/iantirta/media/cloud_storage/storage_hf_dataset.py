@@ -23,6 +23,7 @@ class HFDatasetStorage(StorageMixin):
     :param Optional[str] repo_id:
         required for location.
     """
+
     def __init__(
         self,
         *,
@@ -44,7 +45,7 @@ class HFDatasetStorage(StorageMixin):
 
     @property
     def client(self):
-        if not self._client:
+        if self._client is None:
             from huggingface_hub.hf_api import HfApi
             self._client = HfApi(token=self.access_token)
         return self._client
@@ -84,7 +85,6 @@ class HFDatasetStorage(StorageMixin):
 
         return self.client.upload_folder(
             folder_path=dir_path,
-            path_in_repo='.',
             repo_id=self.repo_id,
             repo_type='dataset',
             token=self.access_token,
