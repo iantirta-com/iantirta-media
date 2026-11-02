@@ -46,7 +46,7 @@ def migrate_drive_to_hf(api, tasks):
                 api.storage_api.upload_folder(folder_path=api.storage_api.staging_dir)
 
             api.api.make_json_request(
-                'karaoke/task/update',
+                'karaoke/tasks/update',
                 {'tasks': buffer_tasks},
             )
             shutil.rmtree(api.storage_api.staging_dir, ignore_errors=True)
