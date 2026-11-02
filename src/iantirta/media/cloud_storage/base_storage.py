@@ -33,8 +33,8 @@ class StorageMixin:
             staging_dir = constants.DEFAULT_UPLOAD_STAGING_DIR
         self.staging_dir = Path(staging_dir)
 
-    @abstractmethod
     @property
+    @abstractmethod
     def download_endpoint(self) -> str:
         """
         :return: a string uri endpoint that should hold the download url domain endpoint
