@@ -43,7 +43,7 @@ class IanTirtaAPI(BaseHTTP):
         Build necessary headers for server calling.
         """
         headers = {
-            'Authorization': f'bearer {self.api_token}',
+            'Authorization': f'bearer {self.access_token}',
             "User-Agent": "IantirtaAPI " + requests.utils.default_user_agent(),
             "Content-Type": "application/json",
         }
