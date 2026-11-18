@@ -32,6 +32,7 @@ class StorageMixin:
         if not staging_dir:
             staging_dir = constants.DEFAULT_UPLOAD_STAGING_DIR
         self.staging_dir = Path(staging_dir)
+        self.staging_dir.mkdir(parents=True, exist_ok=True)
 
     @property
     @abstractmethod
