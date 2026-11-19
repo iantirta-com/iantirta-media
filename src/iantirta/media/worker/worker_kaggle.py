@@ -90,3 +90,4 @@ if __name__ == '__main__':
     api = KaggleWorker(access_token=os.environ['KAGGLE_API_TOKEN'])
     from pprint import pprint
     pprint(api.get_quota())
+    pprint(api.run("."))
